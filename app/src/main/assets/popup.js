@@ -102,6 +102,17 @@ function regionalFeedUrl(url) {
   return u.toString();
 }
 
+
+function setStatus(articleCount, feedLabel, extra = "newest first") {
+  statusEl.innerHTML =
+    esc(String(articleCount)) +
+    ' articles · <span class="current-category">' +
+    esc(String(feedLabel)) +
+    '</span> · ' +
+    esc(String(extra));
+}
+
+
 function renderTabs() {
   tabsEl.innerHTML = "";
   FEEDS.forEach(f => {
@@ -268,10 +279,7 @@ function renderStoryClusters(items, feed) {
   const clusters = clusterStories(items);
   const multiSource = clusters.filter(c => c.sourceCount > 1).length;
 
-  statusEl.textContent =
-    clusters.length + " stories · " +
-    multiSource + " multi-source · " +
-    items.length + " reports · " + feed.label;
+  setStatus(clusters.length, feed.label, items.length + " reports");
 
   grid.innerHTML = "";
 
@@ -488,7 +496,7 @@ async function loadFeed() {
     if (storyMode) {
       renderStoryClusters(items, feed);
     } else {
-      statusEl.textContent = items.length + " articles · " + feed.label + " · newest first";
+      setStatus(items.length, feed.label, "newest first");
 
       const cards = items.map(it => makeCard(it));
       cards.forEach(card => grid.appendChild(card));
