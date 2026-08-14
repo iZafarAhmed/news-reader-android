@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 660px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #fafafa; color: #111; }
+  header { position: sticky; top: 0; z-index: 20; overflow: visible; background: #fff; border-bottom: 1px solid #eee; padding: 10px 14px 10px; }
+
+  /* ---- minimal icon tabs ---- */
+  #tabs { display: flex; gap: 6px; overflow: visible; padding: 2px; }
+  .tab { position: relative; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: #5f6368; cursor: pointer; transition: background .15s, color .15s; }
+  .tab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+  .tab:hover { background: #f1f3f4; color: #111; }
+  .tab:hover svg { transform: scale(1.15) rotate(-8deg); }
+  .tab.active { background: #e8f0fe; color: #1a73e8; }
+  /* ---- hover labels ---- */
+  .tab .tip {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 50%;
+    transform: translate(-50%, 4px);
+    background: #202124;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 6px 9px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity .15s ease, transform .15s ease, visibility .15s;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.16);
+  }
+  .tab:hover .tip {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
+  /* ---- geography switch ---- */
+  .geo-switch {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 2px;
+    border: 1px solid #e0e0e0;
+    border-radius: 18px;
+    background: #f7f7f7;
+    flex: 0 0 auto;
+  }
+
+  .geo-option {
+    height: 30px;
+    min-width: 32px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 15px;
+    background: transparent;
+    color: #5f6368;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+
+  .geo-option:hover {
+    color: #111;
+  }
+
+  .geo-option.active {
+    background: #fff;
+    color: #1a73e8;
+    box-shadow: 0 1px 3px rgba(0,0,0,.16);
+  }
+
+  /* ---- search row ---- */
+  .bar { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .search { position: relative; flex: 1; }
+  .search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: #9aa0a6; fill: none; stroke-width: 2; stroke-linecap: round; }
+  #q { width: 100%; box-sizing: border-box; padding: 9px 14px 9px 34px; border: 1px solid #e0e0e0; border-radius: 20px; font-size: 13px; outline: none; background: #fff; transition: border .15s, box-shadow .15s; }
+  #q:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+  .btn { border: none; background: #1a73e8; color: #fff; border-radius: 20px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
+  .btn:hover { background: #1667c9; }
+  .iconbtn { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: #5f6368; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .iconbtn:hover { background: #f1f3f4; color: #111; }
+  .iconbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .iconbtn.spin svg { animation: rot .6s linear; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* ---- intelligence mode ---- */
+  .mode-btn {
+    height: 34px;
+    padding: 0 11px;
+    border: 1px solid #e0e0e0;
+    border-radius: 17px;
+    background: #fff;
+    color: #5f6368;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+
+  .mode-btn:hover {
+    color: #111;
+    background: #f7f7f7;
+  }
+
+  .mode-btn.active {
+    color: #1a73e8;
+    border-color: #b7cdf5;
+    background: #e8f0fe;
+  }
+
+  /* ---- story clusters ---- */
+  .story-card {
+    grid-column: 1 / -1;
+    padding: 15px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff;
+  }
+
+  .story-card:hover {
+    background: #fafafa;
+  }
+
+  .story-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+    color: #5f6368;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .55px;
+    text-transform: uppercase;
+  }
+
+  .story-label .count {
+    padding: 3px 6px;
+    border-radius: 10px;
+    background: #f1f3f4;
+    color: #5f6368;
+    font-size: 9px;
+  }
+
+  .story-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .story-content {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .story-headline {
+    margin: 0;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    color: #171717;
+    font-size: 14.5px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  .story-headline a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .story-headline a:hover {
+    text-decoration: underline;
+  }
+
+  .story-meta {
+    margin-top: 7px;
+    color: #9aa0a6;
+    font-size: 11px;
+  }
+
+  .story-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 10px;
+  }
+
+  .story-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 7px;
+    border: 1px solid #ededed;
+    border-radius: 12px;
+    background: #fff;
+    color: #5f6368;
+    font-size: 10px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .story-source:hover {
+    background: #f5f7fa;
+    color: #111;
+  }
+
+  .story-source .source-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #9aa0a6;
+  }
+
+  .story-image {
+    flex: 0 0 120px;
+    width: 120px;
+    height: 82px;
+    object-fit: cover;
+    border-radius: 7px;
+    background: #f1f3f4;
+  }
+
+  .story-card .story-image:only-child {
+    display: none;
+  }
+
+  /* ---- story intelligence ---- */
+  .story-signals { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
+  .story-signal { display:inline-flex; padding:3px 7px; border-radius:10px; background:#f5f7fa; color:#6b7280; font-size:9px; font-weight:700; }
+  .story-signal.strong { color:#1a73e8; background:#e8f0fe; }
+  .story-topic { margin-top:5px; color:#80868b; font-size:10.5px; }
+  .story-headline a { transition:color .15s ease; }
+  .story-headline a:hover { color:#1a73e8; }
+
+  /* ---- status + cards ---- */
+  #status { padding: 8px 16px; font-size: 11px; letter-spacing: .3px; text-transform: uppercase; color: #80868b; background: #fafafa; border-bottom: 1px solid #f0f0f0; font-weight: 600; }
+  #grid { display: grid; grid-template-columns: 1fr 1fr; background: #fff; }
+  .card { display: block; padding: 14px 16px; border-bottom: 1px solid #f2f2f2; text-decoration: none; color: inherit; transition: background .12s; }
+  .card:nth-child(odd) { border-right: 1px solid #f2f2f2; }
+  .card:hover { background: #fafafa; }
+  .source { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .source img { width: 14px; height: 14px; border-radius: 50%; }
+  .source span { font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #666; }
+  .card-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  .card-text { min-width: 0; flex: 1; }
+  .headline { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 14.5px; font-weight: 600; line-height: 1.45; color: #171717; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .thumb { flex: 0 0 88px; width: 88px; height: 64px; object-fit: cover; border-radius: 6px; background: #f1f3f4; display: block; }
+  .meta { margin-top: 7px; font-size: 11.5px; color: #9aa0a6; }
+</style>
+</head>
+<body>
+  <header>
+    <div id="tabs"></div>
+    <form id="form" class="bar">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/></svg>
+        <input id="q" type="text" placeholder="Search any topic…" />
+      </div>
+      <button class="btn" type="submit">Search</button>
+
+      <div class="geo-switch" id="geoSwitch" role="group" aria-label="News geography">
+        <button type="button" class="geo-option" data-geo="US" id="geoUS">US</button>
+        <button type="button" class="geo-option" data-geo="IN" id="geoIN">IN</button>
+      </div>
+
+      <button class="mode-btn" type="button" id="storyMode" aria-pressed="false" title="Group similar stories">
+        Stories
+      </button>
+
+      <button class="iconbtn" type="button" id="refresh" title="Refresh">
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      </button>
+    </form>
+  </header>
+  <div id="status">Loading…</div>
+  <div id="grid"></div>
+  <script src="popup.js"></script>
+
+</body>
+</html>
