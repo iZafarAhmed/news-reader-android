@@ -3,14 +3,21 @@ package com.example.newsreader;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.json.JSONObject;
 
@@ -23,21 +30,22 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
 
-    private WebView web;
+    private WebView web;      // the news app UI
+    private WebView browser;  // in-app article browser
+    private View browserBox;
+    private TextView barTitle;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        web = new WebView(this);
-        setContentView(web);
 
+        /* ----- main app WebView ----- */
+        web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
-
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -49,17 +57,95 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (url.startsWith("file://")) return false;
-                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception e) {}
+                openBrowser(url);              // ← in-app instead of Chrome
                 return true;
             }
         });
 
+        /* ----- in-app article browser ----- */
+        browser = new WebView(this);
+        WebSettings bs = browser.getSettings();
+        bs.setJavaScriptEnabled(true);
+        bs.setDomStorageEnabled(true);
+        bs.setUseWideViewPort(true);
+        bs.setLoadWithOverviewMode(true);
+        browser.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                barTitle.setText(url.replace("https://", "").replace("http://", ""));
+            }
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String u = request.getUrl().toString();
+                if (u.startsWith("http://") || u.startsWith("https://")) return false; // stay in-app
+                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception e) {}
+                return true;
+            }
+        });
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setBackgroundColor(0xFFFFFFFF);
+        bar.setElevation(6);
+        bar.addView(barButton("✕", v -> closeBrowser()));
+        bar.addView(barButton("←", v -> { if (browser.canGoBack()) browser.goBack(); }));
+        barTitle = new TextView(this);
+        barTitle.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        barTitle.setPadding(12, 12, 12, 12);
+        barTitle.setMaxLines(1);
+        barTitle.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        barTitle.setTextSize(12);
+        barTitle.setTextColor(0xFF666666);
+        bar.addView(barTitle);
+        bar.addView(barButton("↗", v -> {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(browser.getUrl()))); } catch (Exception e) {}
+        }));
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackgroundColor(0xFFFFFFFF);
+        box.setVisibility(View.GONE);
+        box.addView(bar);
+        box.addView(browser, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        browserBox = box;
+
+        FrameLayout root = new FrameLayout(this);
+        root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.addView(box, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+
         web.loadUrl("file:///android_asset/popup.html");
     }
 
-    /** Back = close reader → close sheet → exit app. */
+    private Button barButton(String txt, View.OnClickListener l) {
+        Button b = new Button(this);
+        b.setText(txt);
+        b.setBackgroundColor(0x00000000);
+        b.setTextColor(0xFF1A73E8);
+        b.setTextSize(16);
+        b.setMinWidth(0); b.setMinimumWidth(0);
+        b.setPadding(28, 8, 28, 8);
+        b.setOnClickListener(l);
+        return b;
+    }
+
+    private void openBrowser(String url) {
+        browserBox.setVisibility(View.VISIBLE);
+        browser.loadUrl(url);
+    }
+    private void closeBrowser() {
+        browser.stopLoading();
+        browserBox.setVisibility(View.GONE);
+        browser.loadUrl("about:blank");
+    }
+
+    /** Back: article history → close article → reader → sheet → exit. */
     @Override
     public void onBackPressed() {
+        if (browserBox.getVisibility() == View.VISIBLE) {
+            if (browser.canGoBack()) browser.goBack(); else closeBrowser();
+            return;
+        }
         web.evaluateJavascript(
             "(function(){" +
             "var r=document.getElementById('reader');" +
@@ -69,15 +155,13 @@ public class MainActivity extends Activity {
             "return 'none';})()",
             value -> {
                 String v = value == null ? "none" : value.replace("\"", "");
-                if ("none".equals(v)) {
-                    runOnUiThread(() -> {
-                        if (web.canGoBack()) web.goBack(); else finish();
-                    });
-                }
+                if ("none".equals(v)) runOnUiThread(() -> {
+                    if (web.canGoBack()) web.goBack(); else finish();
+                });
             });
     }
 
-    /** Native POST for the NVIDIA API (bypasses WebView CORS). */
+    /** Native POST for the NVIDIA API. */
     public class Bridge {
         @JavascriptInterface
         public void postJson(final String url, final String token, final String body, final String cb) {
