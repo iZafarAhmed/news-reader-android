@@ -169,74 +169,90 @@ document.querySelectorAll(".lvl").forEach(b => b.onclick = () => {
   document.querySelectorAll(".lvl").forEach(x => x.classList.toggle("active", x === b));
   renderLevel();
 });
-async function ensureAnalysis() {
-  const link = meta(rItem).link;
-  if (aiCache[link]) { rData = aiCache[link]; renderLevel(); return; }
-  $("rBody").innerHTML = '<p class="r-note">🤖 Analyzing story…</p>';
-  const key = localStorage.getItem("nvidiaKey") || "";
-  let data = null;
-  if (key) { 
-    try { 
-      data = await aiAnalyze(key); 
-    } catch (e) { 
-      console.error("AI Error:", e);
-      toast("AI Error: " + e.message); // <--- NEW: Shows you exactly why it failed
-      data = null; 
-    } 
-  } else {
-    toast("No AI key set. Open ☰ More to add it.");
-  }
-  rData = data || fallbackAnalysis();
-  rData.ai = !!data;
-  aiCache[link] = rData;
-  renderLevel();
+
+let aiSeq = 0;
+function aiRequest(key, payload) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
+    if (window.AndroidBridge) {
+      const cbName = "__aiCb" + (++aiSeq);
+      window[cbName] = str => {
+        clearTimeout(timer); delete window[cbName];
+        try { resolve(JSON.parse(str)); } catch (e) { reject(new Error("Bad bridge response")); }
+      };
+      AndroidBridge.postJson(AI_URL, key, JSON.stringify(payload), cbName);
+    } else {
+      fetch(AI_URL, { method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+        body: JSON.stringify(payload) })
+        .then(r => r.json().then(j => {
+          clearTimeout(timer);
+          if (!r.ok) throw new Error(r.status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + r.status);
+          resolve(j);
+        }))
+        .catch(e => { clearTimeout(timer); reject(e); });
+    }
+  });
 }
+
 function aiAnalyze(key) {
   const m = meta(rItem);
   const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
   const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
   const payload = {
-    model: AI_MODEL, 
-    temperature: 0.2, 
-    max_tokens: 4000,
-    stream: false, // Explicitly disable streaming for JSON
+    model: AI_MODEL,
+    temperature: 0.2,
+    max_tokens: 1200,
+    stream: false,
+    chat_template_kwargs: { enable_thinking: false },
     messages: [
-      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown formatting, no ```json blocks, no explanations, no thinking tags). The JSON shape must be: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
+      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown, no ```json blocks, no explanations). Shape: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
       { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
     ]
   };
-  return aiRequest(key, payload).then(res => {
+  const parse = res => {
+    if (res.http_status) throw new Error(res.http_status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + res.http_status);
+    if (res.error) throw new Error(String(res.error));
     if (!res.choices || !res.choices[0]) throw new Error("Empty response from AI");
-    const content = res.choices[0].message ? res.choices[0].message.content : "";
-    
-    // Robust JSON extraction: find the first { and the last }
-    const start = content.indexOf('{');
-    const end = content.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) {
-      return JSON.parse(content.substring(start, end + 1));
-    }
-    throw new Error("AI did not return valid JSON");
+    const content = res.choices[0].message ? (res.choices[0].message.content || "") : "";
+    const start = content.indexOf("{"), end = content.lastIndexOf("}");
+    if (start !== -1 && end > start) return JSON.parse(content.substring(start, end + 1));
+    throw new Error("AI returned no JSON");
+  };
+  const call = p => aiRequest(key, p).then(parse);
+  return call(payload).catch(e => {
+    if (/400|unsupported|unknown/i.test(e.message)) { delete payload.chat_template_kwargs; return call(payload); }
+    throw e;
   });
 }
-function aiRequest(key, payload) {
-  return new Promise((resolve, reject) => {
-    if (window.AndroidBridge) {
-      window.__aiCb = str => { try { resolve(JSON.parse(str)); } catch (e) { reject(e); } };
-      AndroidBridge.postJson(AI_URL, key, JSON.stringify(payload), "__aiCb");
-    } else {
-      fetch(AI_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key }, body: JSON.stringify(payload) })
-        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(resolve, reject);
-    }
-  });
+
+async function ensureAnalysis() {
+  const link = meta(rItem).link;
+  if (aiCache[link]) { rData = aiCache[link]; renderLevel(); return; }
+  $("rBody").innerHTML = '<p class="r-note">🤖 Analyzing story…</p>';
+  const key = localStorage.getItem("nvidiaKey") || "";
+  if (!key) { rData = fallbackAnalysis(); rData.ai = false; renderLevel(); toast("No AI key set — offline mode"); return; }
+  try {
+    rData = await aiAnalyze(key);
+    rData.ai = true; aiCache[link] = rData; renderLevel();
+  } catch (e) {
+    console.error("AI Error:", e);
+    rData = fallbackAnalysis(); rData.ai = false; renderLevel();
+    $("rBody").insertAdjacentHTML("afterbegin",
+      '<p class="r-note">⚠ ' + esc(e.message) + ' <button class="subchip active" id="retryAi">Retry</button></p>');
+    $("retryAi").onclick = () => { delete aiCache[link]; ensureAnalysis(); };
+  }
 }
+
 function fallbackAnalysis() {
   const m = meta(rItem);
   return {
     quick: rCluster.length ? rCluster.slice(0, 3).map(c => c.source + ": " + c.title) : [m.headline],
-    summary: { context: "Offline mode (no AI key set — add it in ☰ More). Latest coverage via " + (m.source || "one source") + ".", facts: rCluster.slice(0, 4).map(c => c.source + " — " + c.title) },
+    summary: { context: "Offline mode (no AI key set or API error). Latest coverage via " + (m.source || "one source") + ".", facts: rCluster.slice(0, 4).map(c => c.source + " — " + c.title) },
     deep: { timeline: rRelated.slice(0, 5).map(r => timeAgo(textOf(r, "pubDate")) + " — " + textOf(r, "title")), perspectives: [], confirmed: [], unclear: [] }
   };
 }
+
 function renderLevel() {
   const d = rData; if (!d) return;
   const b = $("rBody"); let h = "";
