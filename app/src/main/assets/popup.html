@@ -2,10 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root { --bg:#f7f7f5; --card:#fff; --ink:#111; --mut:#8a8a8a; --line:#ececec; --acc:#1a73e8; }
 * { box-sizing: border-box; }
-body { width: 480px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+body { width: 480px; max-width: 100vw; margin: 0 auto; overflow-x: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); }
 button { font-family: inherit; }
 
 /* top bar */
@@ -36,11 +37,12 @@ button { font-family: inherit; }
 .brief p { margin: 2px 0 0; font-size: 12px; color: var(--mut); }
 
 /* top story */
-.topstory { margin: 12px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: block; }
+.topstory { margin: 12px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: block; max-width: calc(100vw - 32px); }
 .topstory .hero { width: 100%; height: 170px; object-fit: cover; display: block; }
 .ts-body { padding: 14px 16px; }
-.ts-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: 1.2px; color: var(--acc); }
-.ts-head { margin: 6px 0 8px; font-size: 17px; line-height: 1.35; font-weight: 700; }
+.ts-kicker { display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 1.2px; color: var(--acc); }
+.ts-kicker .fav { width: 14px; height: 14px; border-radius: 50%; }
+.ts-head { margin: 6px 0 8px; font-size: 19px; line-height: 1.35; font-weight: 700; color: var(--acc); }
 .ts-meta { font-size: 12px; color: var(--mut); display: flex; gap: 6px; align-items: center; }
 .ts-meta .src-chip { color: var(--acc); font-weight: 600; cursor: pointer; }
 
@@ -49,11 +51,13 @@ button { font-family: inherit; }
 .row { display: flex; gap: 12px; padding: 12px 16px; background: var(--card); border-top: 1px solid var(--line); text-decoration: none; color: inherit; }
 .row:first-child { border-top: none; }
 .row .txt { flex: 1; min-width: 0; }
-.row .srcline { font-size: 10.5px; font-weight: 700; letter-spacing: .6px; color: var(--mut); text-transform: uppercase; }
-.row .head { margin-top: 4px; font-size: 13.5px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row .srcline { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .6px; color: var(--mut); text-transform: uppercase; }
+.row .srcline .fav { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+.row .srcline svg.clk { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.row .head { margin-top: 4px; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--acc); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .row .thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
 .save { border: none; background: none; cursor: pointer; color: #bbb; width: 26px; height: 26px; flex: 0 0 auto; align-self: flex-start; }
-.save svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.save svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .save.on { color: var(--acc); }
 .save.on svg { fill: var(--acc); }
 
