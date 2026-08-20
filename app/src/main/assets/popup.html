@@ -25,11 +25,18 @@ button { font-family: inherit; }
 #q { width: 100%; padding: 10px 14px 10px 36px; border: none; border-radius: 12px; background: #eceae7; font-size: 13px; outline: none; }
 #q:focus { background: #fff; box-shadow: 0 0 0 2px var(--acc); }
 
-/* category pills */
+/* level-1 pills */
 .pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 16px 12px; border-bottom: 1px solid var(--line); }
 .pills::-webkit-scrollbar { display: none; }
 .pill { flex: 0 0 auto; border: 1px solid #e0dedb; background: #fff; color: #333; font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer; transition: .15s; }
 .pill.active { background: #111; color: #fff; border-color: #111; }
+
+/* level-2 sub chips */
+.subs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 8px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+.subs::-webkit-scrollbar { display: none; }
+.subs.hidden { display: none; }
+.subchip { flex: 0 0 auto; border: none; background: #f1f3f4; color: #444; font-size: 11.5px; font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer; transition: .15s; }
+.subchip.active { background: var(--acc); color: #fff; }
 
 /* briefing */
 .brief { padding: 16px 16px 4px; }
@@ -67,7 +74,7 @@ button { font-family: inherit; }
 .bnav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .bnav.active { color: var(--ink); }
 
-/* sources sheet, scrim, toast */
+/* sheet, scrim, toast */
 #scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; z-index: 15; }
 #sheet { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); max-height: 70%; overflow: auto; display: none; z-index: 20; padding: 14px 0 20px; }
 #sheet h4 { margin: 0 16px 8px; font-size: 12px; letter-spacing: 1px; color: var(--mut); }
@@ -94,6 +101,7 @@ button { font-family: inherit; }
   </div>
 
   <nav class="pills" id="pills"></nav>
+  <nav class="subs hidden" id="subs"></nav>
 
   <section class="brief" id="brief">
     <h2 id="greet"></h2>
