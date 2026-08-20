@@ -92,8 +92,19 @@ async function loadFeed() {
     lastItems = items;
     if (!items.length) { subEl.textContent = "No stories found"; return; }
     renderTop(items[0]);
-    warm(items[0]); // pre-analyze top story in background → instant AI on tap
-    items.slice(1).forEach(it => gridEl.appendChild(row(it)));
+    warm(items[0]);
+    /* 5 compact rows, then 1 featured hero card */
+    const rest = items.slice(1);
+    for (let i = 0; i < rest.length; i++) {
+      gridEl.appendChild(row(rest[i]));
+      if ((i + 1) % 5 === 0 && i + 1 < rest.length) {
+        i++;
+        const hc = document.createElement("a");
+        hc.className = "topstory";
+        fillHero(hc, rest[i]);
+        gridEl.appendChild(hc);
+      }
+    }
   } catch (err) { subEl.textContent = "Couldn't load: " + err.message; }
 }
 function parseItems(text) {
@@ -102,10 +113,11 @@ function parseItems(text) {
   return [...xml.querySelectorAll("item")].map(it => { it._t = new Date(textOf(it, "pubDate")).getTime() || 0; return it; });
 }
 
-function renderTop(item) {
+/* ---------- hero cards ---------- */
+function fillHero(el, item) {
   const m = meta(item), cluster = getCluster(item), img = getImageUrl(item);
-  topstoryEl.href = m.link; topstoryEl.innerHTML = "";
-  if (img) { const im = document.createElement("img"); im.className = "hero"; im.src = img; im.addEventListener("error", () => im.remove()); topstoryEl.appendChild(im); }
+  el.href = m.link; el.innerHTML = ""; el.style.display = "block";
+  if (img) { const im = document.createElement("img"); im.className = "hero"; im.src = img; im.addEventListener("error", () => im.remove()); el.appendChild(im); }
   const body = document.createElement("div"); body.className = "ts-body";
   const k = document.createElement("div"); k.className = "ts-kicker";
   if (m.sourceUrl) { const fv = document.createElement("img"); fv.className = "fav"; fv.src = faviconFor(m.sourceUrl); fv.addEventListener("error", () => fv.remove()); k.appendChild(fv); }
@@ -115,9 +127,10 @@ function renderTop(item) {
   if (cluster.length) { const chip = document.createElement("span"); chip.className = "src-chip"; chip.textContent = cluster.length + " sources"; chip.onclick = e => { e.preventDefault(); e.stopPropagation(); showSheet(cluster); }; mt.appendChild(chip); }
   const ai = document.createElement("span"); ai.className = "src-chip"; ai.textContent = "✨ AI"; ai.onclick = e => { e.preventDefault(); e.stopPropagation(); openReader(item); }; mt.appendChild(ai);
   mt.appendChild(document.createTextNode("· " + timeAgo(textOf(item, "pubDate"))));
-  body.append(k, h, mt); topstoryEl.appendChild(body);
-  topstoryEl.style.display = "block";
+  body.append(k, h, mt); el.appendChild(body);
 }
+function renderTop(item) { fillHero(topstoryEl, item); }
+
 function row(item) {
   const m = meta(item), img = getImageUrl(item);
   const a = document.createElement("a"); a.className = "row"; a.href = m.link; a.target = "_blank"; a.rel = "noopener";
@@ -179,7 +192,6 @@ async function ensureAnalysis() {
     $("retryAi").onclick = () => { delete aiCache[link]; ensureAnalysis(); };
   }
 }
-/* background pre-analysis of the top story so ✨ feels instant */
 async function warm(item) {
   const link = meta(item).link;
   const key = localStorage.getItem("nvidiaKey") || "";
