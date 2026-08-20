@@ -196,35 +196,6 @@ function aiRequest(key, payload) {
 }
 
 function aiAnalyze(key) {
-  const m = meta(rItem);
-  const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
-  const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
-  const payload = {
-    model: AI_MODEL,
-    temperature: 0.2,
-    max_tokens: 1200,
-    stream: false,
-    chat_template_kwargs: { enable_thinking: false },
-    messages: [
-      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown, no ```json blocks, no explanations). Shape: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
-      { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
-    ]
-  };
-  const parse = res => {
-    if (res.http_status) throw new Error(res.http_status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + res.http_status);
-    if (res.error) throw new Error(String(res.error));
-    if (!res.choices || !res.choices[0]) throw new Error("Empty response from AI");
-    const content = res.choices[0].message ? (res.choices[0].message.content || "") : "";
-    const start = content.indexOf("{"), end = content.lastIndexOf("}");
-    if (start !== -1 && end > start) return JSON.parse(content.substring(start, end + 1));
-    throw new Error("AI returned no JSON");
-  };
-  const call = p => aiRequest(key, p).then(parse);
-  return call(payload).catch(e => {
-    if (/400|unsupported|unknown/i.test(e.message)) { delete payload.chat_template_kwargs; return call(payload); }
-    throw e;
-  });
-}
 
 async function ensureAnalysis() {
   const link = meta(rItem).link;
