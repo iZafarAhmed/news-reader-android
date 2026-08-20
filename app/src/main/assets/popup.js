@@ -92,6 +92,7 @@ async function loadFeed() {
     lastItems = items;
     if (!items.length) { subEl.textContent = "No stories found"; return; }
     renderTop(items[0]);
+    warm(items[0]); // pre-analyze top story in background → instant AI on tap
     items.slice(1).forEach(it => gridEl.appendChild(row(it)));
   } catch (err) { subEl.textContent = "Couldn't load: " + err.message; }
 }
@@ -123,7 +124,7 @@ function row(item) {
   const txt = document.createElement("div"); txt.className = "txt";
   const sr = document.createElement("div"); sr.className = "srcline";
   sr.innerHTML = (m.sourceUrl ? '<img class="fav" src="' + faviconFor(m.sourceUrl) + '" alt="">' : "") +
-    "<span>" + esc(m.source) + "</span><span>•</span>" +
+    '<span class="src">' + esc(m.source) + "</span><span>•</span>" +
     '<svg class="clk" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
     "<span>" + timeAgo(textOf(item, "pubDate")) + "</span>";
   const hd = document.createElement("div"); hd.className = "head"; hd.textContent = m.headline;
@@ -147,44 +148,63 @@ function saveBtn(m) {
   return b;
 }
 
-/* ---------- AI reader (plain-text protocol — no JSON to break) ---------- */
-let rItem = null, rData = null, rLevel = "quick", rCluster = [], rRelated = [], aiSeq = 0;
+/* ---------- AI reader: single unified analysis ---------- */
+let rItem = null, rData = null, rCluster = [], rRelated = [], aiSeq = 0;
 function openReader(item) {
   rItem = item; rCluster = getCluster(item); rRelated = relatedFor(item);
-  rData = null; rLevel = "quick";
+  rData = null;
   $("rSource").textContent = meta(item).source || "";
   $("rTitle").textContent = meta(item).headline;
   $("rFull").href = meta(item).link;
-  document.querySelectorAll(".lvl").forEach(b => b.classList.toggle("active", b.dataset.l === "quick"));
   readerEl.classList.add("open");
   ensureAnalysis();
 }
 $("rClose").onclick = () => readerEl.classList.remove("open");
-document.querySelectorAll(".lvl").forEach(b => b.onclick = () => {
-  rLevel = b.dataset.l;
-  document.querySelectorAll(".lvl").forEach(x => x.classList.toggle("active", x === b));
-  renderLevel();
-});
+
 async function ensureAnalysis() {
   const link = meta(rItem).link;
-  if (aiCache[link]) { rData = aiCache[link]; renderLevel(); return; }
-  $("rBody").innerHTML = '<p class="r-note">🤖 Analyzing story…</p>';
+  if (aiCache[link]) { rData = aiCache[link]; renderAnalysis(); return; }
+  $("rBody").innerHTML = '<div class="skel" style="width:45%"></div><div class="skel"></div><div class="skel"></div><div class="skel" style="width:70%"></div><p class="r-note">🤖 Analyzing story…</p>';
   const key = localStorage.getItem("nvidiaKey") || "";
-  if (!key) { rData = fallbackAnalysis(); rData.ai = false; renderLevel(); toast("No AI key set — offline mode"); return; }
+  const ctx = { item: rItem, cluster: rCluster, related: rRelated };
+  if (!key) { rData = fallbackFor(ctx); rData.ai = false; renderAnalysis(); toast("No AI key set — offline mode"); return; }
   try {
-    rData = await aiAnalyze(key);
-    const fb = fallbackAnalysis();
-    if (!rData.quick.length) rData.quick = fb.quick;
-    if (!rData.summary.context) rData.summary.context = fb.summary.context;
-    if (!rData.summary.facts.length) rData.summary.facts = fb.summary.facts;
-    if (!rData.deep.timeline.length) rData.deep.timeline = fb.deep.timeline;
-    rData.ai = true; aiCache[link] = rData; renderLevel();
+    rData = await aiAnalyze(key, ctx);
+    mergeFallback(rData, ctx);
+    rData.ai = true; aiCache[link] = rData; renderAnalysis();
   } catch (e) {
     console.error("AI Error:", e);
-    rData = fallbackAnalysis(); rData.ai = false; renderLevel();
+    rData = fallbackFor(ctx); rData.ai = false; renderAnalysis();
     $("rBody").insertAdjacentHTML("afterbegin", '<p class="r-note">⚠ ' + esc(e.message) + ' <button class="subchip active" id="retryAi">Retry</button></p>');
     $("retryAi").onclick = () => { delete aiCache[link]; ensureAnalysis(); };
   }
+}
+/* background pre-analysis of the top story so ✨ feels instant */
+async function warm(item) {
+  const link = meta(item).link;
+  const key = localStorage.getItem("nvidiaKey") || "";
+  if (!key || aiCache[link]) return;
+  try {
+    const ctx = { item, cluster: getCluster(item), related: relatedFor(item) };
+    const d = await aiAnalyze(key, ctx);
+    mergeFallback(d, ctx);
+    d.ai = true; aiCache[link] = d;
+  } catch (e) {}
+}
+function mergeFallback(d, ctx) {
+  const fb = fallbackFor(ctx);
+  if (!d.quick || !d.quick.length) d.quick = fb.quick;
+  if (!d.summary.context) d.summary.context = fb.summary.context;
+  if (!d.summary.facts || !d.summary.facts.length) d.summary.facts = fb.summary.facts;
+  if (!d.deep.timeline || !d.deep.timeline.length) d.deep.timeline = fb.deep.timeline;
+}
+function fallbackFor(ctx) {
+  const m = meta(ctx.item);
+  return {
+    quick: ctx.cluster.length ? ctx.cluster.slice(0, 3).map(c => c.source + ": " + c.title) : [m.headline],
+    summary: { context: "Offline mode (no AI available). Latest coverage via " + (m.source || "one source") + ".", facts: ctx.cluster.slice(0, 4).map(c => c.source + " — " + c.title) },
+    deep: { timeline: ctx.related.slice(0, 5).map(r => timeAgo(textOf(r, "pubDate")) + " — " + textOf(r, "title")), perspectives: [], confirmed: [], unclear: [] }
+  };
 }
 function aiRequest(key, payload) {
   return new Promise((resolve, reject) => {
@@ -203,10 +223,10 @@ function aiRequest(key, payload) {
     }
   });
 }
-function aiAnalyze(key) {
-  const m = meta(rItem);
-  const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
-  const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
+function aiAnalyze(key, ctx) {
+  const m = meta(ctx.item);
+  const others = ctx.cluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
+  const rel = ctx.related.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
   const payload = {
     model: AI_MODEL, temperature: 0.2, max_tokens: 1200, stream: false,
     chat_template_kwargs: { enable_thinking: false },
@@ -221,7 +241,7 @@ function aiAnalyze(key) {
         "CONFIRMED\n- point\n- point\n" +
         "UNCLEAR\n- point\n- point\n" +
         "Keep every line under 25 words." },
-      { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
+      { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(ctx.item, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
     ]
   };
   const parse = res => {
@@ -264,30 +284,18 @@ function parseAnalysis(t) {
   }
   return out;
 }
-function fallbackAnalysis() {
-  const m = meta(rItem);
-  return {
-    quick: rCluster.length ? rCluster.slice(0, 3).map(c => c.source + ": " + c.title) : [m.headline],
-    summary: { context: "Offline mode (no AI available). Latest coverage via " + (m.source || "one source") + ".", facts: rCluster.slice(0, 4).map(c => c.source + " — " + c.title) },
-    deep: { timeline: rRelated.slice(0, 5).map(r => timeAgo(textOf(r, "pubDate")) + " — " + textOf(r, "title")), perspectives: [], confirmed: [], unclear: [] }
-  };
-}
-function renderLevel() {
+function renderAnalysis() {
   const d = rData; if (!d) return;
   const b = $("rBody"); let h = "";
-  if (rLevel === "quick") {
-    h = '<h5>⚡ Quick · 30 sec' + (d.ai ? "" : " · offline") + '</h5><ul>' + d.quick.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-  } else if (rLevel === "summary") {
-    h = '<h5>📖 Summary · 2 min' + (d.ai ? "" : " · offline") + '</h5><div class="ctx">' + esc(d.summary.context) + '</div><h5>Key facts</h5><ul>' + d.summary.facts.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-  } else {
-    h = '<h5>🔎 Deep Dive · 10 min' + (d.ai ? "" : " · offline") + '</h5>';
-    if (d.deep.timeline.length) h += "<h5>Timeline</h5><ul>" + d.deep.timeline.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-    if (d.deep.perspectives.length) h += "<h5>Perspectives</h5>" + d.deep.perspectives.map(p => '<div class="persp"><b>' + esc(p.side) + "</b><br>" + esc(p.view) + "</div>").join("");
-    if (d.deep.confirmed.length) h += "<h5>✓ Confirmed</h5><ul>" + d.deep.confirmed.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-    if (d.deep.unclear.length) h += "<h5>? Still unclear</h5><ul>" + d.deep.unclear.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-    if (rCluster.length) h += '<h5>Sources (' + rCluster.length + ')</h5><ul>' + rCluster.slice(0, 6).map(c => '<li><a target="_blank" rel="noopener" href="' + c.link + '">' + esc(c.source) + "</a></li>").join("") + "</ul>";
-    if (rRelated.length) h += "<h5>Related</h5><ul>" + rRelated.slice(0, 5).map(r => "<li>" + esc(textOf(r, "title")) + "</li>").join("") + "</ul>";
-  }
+  h += '<h5>⚡ Key points · 30 sec' + (d.ai ? "" : " · offline") + '</h5><ul>' + d.quick.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  h += '<h5>📖 Context</h5><div class="ctx">' + esc(d.summary.context) + "</div>";
+  if (d.summary.facts.length) h += "<h5>Key facts</h5><ul>" + d.summary.facts.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  if (d.deep.timeline.length) h += "<h5>🔎 Timeline</h5><ul>" + d.deep.timeline.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  if (d.deep.perspectives.length) h += "<h5>Perspectives</h5>" + d.deep.perspectives.map(p => '<div class="persp"><b>' + esc(p.side) + "</b><br>" + esc(p.view) + "</div>").join("");
+  if (d.deep.confirmed.length) h += "<h5>✓ Confirmed</h5><ul>" + d.deep.confirmed.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  if (d.deep.unclear.length) h += "<h5>? Still unclear</h5><ul>" + d.deep.unclear.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  if (rCluster.length) h += '<h5>Sources (' + rCluster.length + ')</h5><ul>' + rCluster.slice(0, 6).map(c => '<li><a target="_blank" rel="noopener" href="' + c.link + '">' + esc(c.source) + "</a></li>").join("") + "</ul>";
+  if (rRelated.length) h += "<h5>Related</h5><ul>" + rRelated.slice(0, 5).map(r => "<li>" + esc(textOf(r, "title")) + "</li>").join("") + "</ul>";
   b.innerHTML = h;
 }
 function relatedFor(item) {
@@ -309,7 +317,7 @@ function renderSaved() {
     const a = document.createElement("a"); a.className = "row"; a.href = s.link; a.target = "_blank"; a.rel = "noopener";
     const txt = document.createElement("div"); txt.className = "txt";
     const sr = document.createElement("div"); sr.className = "srcline";
-    sr.innerHTML = (s.sourceUrl ? '<img class="fav" src="' + faviconFor(s.sourceUrl) + '" alt="">' : "") + "<span>" + esc(s.source) + "</span>";
+    sr.innerHTML = (s.sourceUrl ? '<img class="fav" src="' + faviconFor(s.sourceUrl) + '" alt="">' : "") + '<span class="src">' + esc(s.source) + "</span>";
     const hd = document.createElement("div"); hd.className = "head"; hd.textContent = s.headline;
     txt.append(sr, hd); a.appendChild(txt);
     const b = document.createElement("button"); b.className = "save on";
@@ -394,12 +402,13 @@ function esc(s) { return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 function timeAgo(rfc822) {
   const then = new Date(rfc822); if (isNaN(then)) return "";
   const mins = Math.floor((Date.now() - then) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return mins + " minute" + (mins > 1 ? "s" : "") + " ago";
+  if (mins < 1) return "now";
+  if (mins < 60) return mins + "m";
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+  if (hours < 24) return hours + "h";
   const days = Math.floor(hours / 24);
-  if (days < 7) return days + " day" + (days > 1 ? "s" : "") + " ago";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return days + "d";
   return then.toLocaleDateString();
 }
 function getImageUrl(item) {
