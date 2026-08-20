@@ -3,7 +3,7 @@ const T = id => "https://news.google.com/rss/topics/" + id + "?hl=en-US&gl=US&ce
 const S = q  => "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS;
 
 const AI_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-let AI_MODEL = localStorage.getItem("aiModel") || "nemotron-3.5-lightning-30b-a3b";
+let AI_MODEL = localStorage.getItem("aiModel") || "nvidia/nemotron-3.5-lightning-30b-a3b";
 
 const CATS = [
   { id: "settlers", ico: "🗞️", label: "Settlers", url: S("Israeli-settlers"), subs: [] },
@@ -175,7 +175,17 @@ async function ensureAnalysis() {
   $("rBody").innerHTML = '<p class="r-note">🤖 Analyzing story…</p>';
   const key = localStorage.getItem("nvidiaKey") || "";
   let data = null;
-  if (key) { try { data = await aiAnalyze(key); } catch (e) { data = null; } }
+  if (key) { 
+    try { 
+      data = await aiAnalyze(key); 
+    } catch (e) { 
+      console.error("AI Error:", e);
+      toast("AI Error: " + e.message); // <--- NEW: Shows you exactly why it failed
+      data = null; 
+    } 
+  } else {
+    toast("No AI key set. Open ☰ More to add it.");
+  }
   rData = data || fallbackAnalysis();
   rData.ai = !!data;
   aiCache[link] = rData;
@@ -186,15 +196,26 @@ function aiAnalyze(key) {
   const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
   const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
   const payload = {
-    model: AI_MODEL, temperature: 0.2, max_tokens: 900,
+    model: AI_MODEL, 
+    temperature: 0.2, 
+    max_tokens: 4000,
+    stream: false, // Explicitly disable streaming for JSON
     messages: [
-      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown) of shape: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
+      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown formatting, no ```json blocks, no explanations, no thinking tags). The JSON shape must be: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
       { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
     ]
   };
   return aiRequest(key, payload).then(res => {
-    const content = res.choices && res.choices[0] && res.choices[0].message ? res.choices[0].message.content : "";
-    return JSON.parse(content.replace(/```json|```/g, "").trim());
+    if (!res.choices || !res.choices[0]) throw new Error("Empty response from AI");
+    const content = res.choices[0].message ? res.choices[0].message.content : "";
+    
+    // Robust JSON extraction: find the first { and the last }
+    const start = content.indexOf('{');
+    const end = content.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      return JSON.parse(content.substring(start, end + 1));
+    }
+    throw new Error("AI did not return valid JSON");
   });
 }
 function aiRequest(key, payload) {
@@ -280,7 +301,7 @@ function showSheet(cluster) {
 function openSettings() {
   sheetEl.innerHTML = "<h4>⚙ SETTINGS · AI</h4>" +
     '<div class="setrow"><input id="keyIn" type="password" placeholder="NVIDIA API key (nvapi-…)" value="' + (localStorage.getItem("nvidiaKey") || "") + '"></div>' +
-    '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID" value="' + AI_MODEL + '"></div>' +
+    '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID (e.g. nvidia/nemotron...)" value="' + AI_MODEL + '"></div>' +
     '<div class="setrow"><button class="subchip active" id="aiSave">Save</button></div>';
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
   $("aiSave").onclick = () => {
