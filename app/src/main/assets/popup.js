@@ -1,39 +1,71 @@
 const LANG_PARAMS = "&hl=en-US&gl=US&ceid=US:en";
+const T = id => "https://news.google.com/rss/topics/" + id + "?hl=en-US&gl=US&ceid=US%3Aen";
+const S = q  => "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS;
 
-const FEEDS = [
-  { id: "settlers", short: "Settlers", label: "Israeli Settlers", url: "https://news.google.com/rss/search?q=Israeli-settlers" + LANG_PARAMS },
-  { id: "crypto",   short: "Crypto",   label: "Digital Currencies", url: "https://news.google.com/rss/topics/CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNaVzRvQUFQAQ?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "tech",     short: "Tech",     label: "Technology", url: "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "world",    short: "World",    label: "World", url: "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "business", short: "Business", label: "Business", url: "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "economy",  short: "Economy",  label: "Economy", url: "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSmxiaWdBUAE?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "science",  short: "Science",  label: "Science", url: "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "space",    short: "Space",    label: "Space", url: "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSmxiaWdBUAE?hl=en-US&gl=US&ceid=US%3Aen" },
-  { id: "health",   short: "Health",   label: "Health", url: "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ?hl=en-US&gl=US&ceid=US%3Aen" }
+/* ---------- hierarchical taxonomy ---------- */
+const CATS = [
+  { id: "settlers", label: "Settlers", url: S("Israeli-settlers"), subs: [] },
+
+  { id: "world", label: "World", url: T("CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB"), subs: [
+    { label: "Politics",  url: S("politics") },
+    { label: "Conflicts", url: S("war conflict") },
+    { label: "Diplomacy", url: S("diplomacy") },
+    { label: "Society",   url: S("society") } ] },
+
+  { id: "business", label: "Business", url: T("CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB"), subs: [
+    { label: "Economy",   url: T("CAAqIggKIhxDQkFTRHdvSkwyMHZNR2RtY0hNekVnSmxiaWdBUAE") },
+    { label: "Companies", url: S("companies") },
+    { label: "Finance",   url: S("finance banking") },
+    { label: "Markets",   url: S("stock market") } ] },
+
+  { id: "tech", label: "Technology", url: T("CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB"), subs: [
+    { label: "AI",            url: S("artificial intelligence") },
+    { label: "Software",      url: S("software") },
+    { label: "Hardware",      url: S("hardware semiconductors") },
+    { label: "Cybersecurity", url: S("cybersecurity") },
+    { label: "Startups",      url: S("startups") } ] },
+
+  { id: "crypto", label: "Digital Assets", url: T("CAAqJAgKIh5DQkFTRUFvS0wyMHZNSEk0YkhsM054SUNaVzRvQUFQAQ"), subs: [
+    { label: "Bitcoin",    url: S("bitcoin") },
+    { label: "Ethereum",   url: S("ethereum") },
+    { label: "DeFi",       url: S("DeFi") },
+    { label: "Regulation", url: S("crypto regulation") },
+    { label: "Markets",    url: S("crypto market trading") } ] },
+
+  { id: "science", label: "Science", url: T("CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB"), subs: [
+    { label: "Space",    url: T("CAAqIggKIhxDQkFTRHdvSkwyMHZNREU0TXpOM0VnSmxiaWdBUAE") },
+    { label: "Health",   url: T("CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ") },
+    { label: "Climate",  url: S("climate change") },
+    { label: "Research", url: S("scientific research") } ] }
 ];
 
 const $ = id => document.getElementById(id);
-const gridEl = $("grid"), pillsEl = $("pills"), topstoryEl = $("topstory"),
-      briefEl = $("brief"), greetEl = $("greet"), subEl = $("sub"),
-      latestTitle = $("latestTitle"), sheetEl = $("sheet"), scrimEl = $("scrim"),
-      toastEl = $("toast"), input = $("q");
+const gridEl = $("grid"), pillsEl = $("pills"), subsEl = $("subs"),
+      topstoryEl = $("topstory"), briefEl = $("brief"), greetEl = $("greet"),
+      subEl = $("sub"), latestTitle = $("latestTitle"), sheetEl = $("sheet"),
+      scrimEl = $("scrim"), toastEl = $("toast"), input = $("q");
 
-let currentPill = localStorage.getItem("pill") || "foryou";
+let currentCat = localStorage.getItem("pill") || "foryou";
+let currentSub = null;
 let customFeed = null;
 let saved = JSON.parse(localStorage.getItem("saved") || "[]");
 
-/* ---------- pills ---------- */
+/* ---------- level 1 pills ---------- */
 function renderPills() {
   pillsEl.innerHTML = "";
   const mk = (id, label) => {
     const b = document.createElement("button");
-    b.className = "pill" + (!customFeed && currentPill === id ? " active" : "");
+    b.className = "pill" + (!customFeed && currentCat === id ? " active" : "");
     b.textContent = label;
-    b.onclick = () => { customFeed = null; currentPill = id; localStorage.setItem("pill", id); renderPills(); loadFeed(); };
+    b.onclick = () => {
+      customFeed = null; currentCat = id; currentSub = null;
+      localStorage.setItem("pill", id);
+      renderPills(); renderSubs(); loadFeed();
+    };
     pillsEl.appendChild(b);
   };
   mk("foryou", "For You");
-  FEEDS.forEach(f => mk(f.id, f.short));
+  CATS.forEach(c => mk(c.id, c.label));
   if (customFeed) {
     const b = document.createElement("button");
     b.className = "pill active"; b.textContent = customFeed.label;
@@ -41,17 +73,39 @@ function renderPills() {
   }
 }
 
+/* ---------- level 2 sub chips ---------- */
+function renderSubs() {
+  subsEl.innerHTML = "";
+  const cat = CATS.find(c => c.id === currentCat);
+  if (customFeed || !cat || !cat.subs.length) { subsEl.classList.add("hidden"); return; }
+  subsEl.classList.remove("hidden");
+  const mk = (label, active, fn) => {
+    const b = document.createElement("button");
+    b.className = "subchip" + (active ? " active" : "");
+    b.textContent = label;
+    b.onclick = fn;
+    subsEl.appendChild(b);
+  };
+  mk("All " + cat.label, currentSub === null, () => { currentSub = null; renderSubs(); loadFeed(); });
+  cat.subs.forEach((s, i) => mk(s.label, currentSub === i, () => { currentSub = i; renderSubs(); loadFeed(); }));
+}
+
 /* ---------- loading ---------- */
 async function loadFeed() {
   setNav("home"); sheetHide();
   gridEl.innerHTML = ""; topstoryEl.style.display = "none";
   latestTitle.textContent = "LATEST STORIES";
-  const feed = customFeed || (currentPill !== "foryou" ? FEEDS.find(f => f.id === currentPill) : null);
+  const cat = CATS.find(c => c.id === currentCat);
+  let url = null, label = "For You";
+  if (customFeed) { url = customFeed.url; label = customFeed.label; }
+  else if (cat && currentSub !== null) { url = cat.subs[currentSub].url; label = cat.label + " · " + cat.subs[currentSub].label; }
+  else if (cat) { url = cat.url; label = cat.label; }
+
   try {
     let items;
-    if (!feed) {
+    if (!url) {                                   // For You = merged parents
       subEl.textContent = "Building your briefing…";
-      const results = await Promise.allSettled(FEEDS.map(f => fetch(f.url).then(r => r.text())));
+      const results = await Promise.allSettled(CATS.map(f => fetch(f.url).then(r => r.text())));
       items = []; const seen = new Set();
       for (const r of results) {
         if (r.status !== "fulfilled") continue;
@@ -65,10 +119,10 @@ async function loadFeed() {
       greetEl.textContent = h < 5 || h >= 18 ? "GOOD EVENING" : h < 12 ? "GOOD MORNING" : "GOOD AFTERNOON";
       subEl.textContent = "Your 5-minute briefing";
     } else {
-      const res = await fetch(feed.url);
+      const res = await fetch(url);
       if (!res.ok) throw new Error("HTTP " + res.status);
       items = parseItems(await res.text());
-      greetEl.textContent = feed.label.toUpperCase();
+      greetEl.textContent = label.toUpperCase();
       subEl.textContent = items.length + " articles · newest first";
     }
     if (!items.length) { subEl.textContent = "No stories found"; return; }
@@ -124,7 +178,7 @@ function renderTop(item) {
   topstoryEl.style.display = "block";
 }
 
-/* ---------- story rows ---------- */
+/* ---------- rows ---------- */
 function row(item) {
   const m = meta(item), img = getImageUrl(item);
   const a = document.createElement("a");
@@ -133,8 +187,7 @@ function row(item) {
   const sr = document.createElement("div"); sr.className = "srcline";
   sr.innerHTML =
     (m.sourceUrl ? '<img class="fav" src="' + faviconFor(m.sourceUrl) + '" alt="">' : "") +
-    "<span>" + esc(m.source) + "</span>" +
-    "<span>•</span>" +
+    "<span>" + esc(m.source) + "</span><span>•</span>" +
     '<svg class="clk" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
     "<span>" + timeAgo(textOf(item, "pubDate")) + "</span>";
   const hd = document.createElement("div"); hd.className = "head"; hd.textContent = m.headline;
@@ -164,7 +217,7 @@ function saveBtn(m) {
   return b;
 }
 
-/* ---------- saved view ---------- */
+/* ---------- saved ---------- */
 function renderSaved() {
   setNav("saved"); sheetHide();
   briefEl.style.display = "block";
@@ -200,7 +253,7 @@ function renderSaved() {
   });
 }
 
-/* ---------- cluster sources ---------- */
+/* ---------- cluster sheet ---------- */
 function getCluster(item) {
   const d = item.querySelector("description");
   if (!d) return [];
@@ -215,7 +268,6 @@ function getCluster(item) {
     source: a.parentElement && a.parentElement.querySelector("font") ? a.parentElement.querySelector("font").textContent : ""
   }));
 }
-
 function showSheet(cluster) {
   sheetEl.innerHTML = "<h4>" + cluster.length + " SOURCES COVERING THIS</h4>";
   cluster.forEach(c => {
@@ -244,12 +296,12 @@ function toast(msg) {
 $("form").addEventListener("submit", e => {
   e.preventDefault();
   const q = input.value.trim();
-  if (!q) { customFeed = null; currentPill = "foryou"; localStorage.setItem("pill", currentPill); }
-  else customFeed = { label: pretty(q), url: searchUrl(q) };
+  if (!q) { customFeed = null; currentCat = "foryou"; currentSub = null; localStorage.setItem("pill", currentCat); }
+  else customFeed = { label: pretty(q), url: S(q) };
   input.value = ""; input.blur();
-  renderPills(); loadFeed();
+  renderPills(); renderSubs(); loadFeed();
 });
-$("navHome").onclick = () => { renderPills(); loadFeed(); };
+$("navHome").onclick = () => { customFeed = null; renderPills(); renderSubs(); loadFeed(); };
 $("navSearch").onclick = () => { window.scrollTo({ top: 0 }); input.focus(); };
 $("navSaved").onclick = renderSaved;
 $("navMenu").onclick = () => toast("Summaries, timelines & personalization — next phases");
@@ -270,7 +322,6 @@ function faviconFor(url) {
   try { return "https://www.google.com/s2/favicons?domain=" + new URL(url).hostname + "&sz=64"; }
   catch (e) { return ""; }
 }
-function searchUrl(q) { return "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS; }
 function pretty(q) { return q.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
 function textOf(node, tag) { const el = node.querySelector(tag); return el ? el.textContent.trim() : ""; }
 function esc(s) { return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -326,4 +377,5 @@ function extractImageFromHtml(html) {
 }
 
 renderPills();
+renderSubs();
 loadFeed();
