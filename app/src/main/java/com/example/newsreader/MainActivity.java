@@ -59,31 +59,37 @@ public class MainActivity extends Activity {
 
     /** Native POST for the NVIDIA API (bypasses WebView CORS). */
     public class Bridge {
-        @JavascriptInterface
-        public void postJson(final String url, final String token, final String body, final String cb) {
-            new Thread(() -> {
-                String out;
-                try {
-                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                    c.setRequestMethod("POST");
-                    c.setConnectTimeout(20000);
-                    c.setReadTimeout(90000);
-                    c.setDoOutput(true);
-                    c.setRequestProperty("Content-Type", "application/json");
-                    c.setRequestProperty("Authorization", "Bearer " + token);
-                    c.getOutputStream().write(body.getBytes("UTF-8"));
-                    InputStream in = c.getResponseCode() < 400 ? c.getInputStream() : c.getErrorStream();
-                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
-                    byte[] buf = new byte[4096]; int n;
-                    while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
-                    out = bo.toString("UTF-8");
-                } catch (Exception e) {
-                    out = "{\"error\":\"" + e.getMessage() + "\"}";
-                }
-                final String js = cb + "(" + JSONObject.quote(out) + ");";
-                web.post(() -> web.evaluateJavascript(js, null));
-            }).start();
+ @JavascriptInterface
+public void postJson(final String url, final String token, final String body, final String cb) {
+    new Thread(() -> {
+        String out;
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(20000);
+            c.setReadTimeout(180000);          // thinking models can be slow
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("Authorization", "Bearer " + token);
+            c.getOutputStream().write(body.getBytes("UTF-8"));
+            int code = c.getResponseCode();
+            if (code >= 400) {
+                out = "{\"http_status\":" + code + "}";   // surface 429/401/404 to the app
+            } else {
+                InputStream in = c.getInputStream();
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096]; int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                out = bo.toString("UTF-8");
+            }
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+            out = "{\"error\":\"" + msg.replace("\"", "'") + "\"}";
         }
+        final String js = cb + "(" + JSONObject.quote(out) + ");";
+        web.post(() -> web.evaluateJavascript(js, null));
+    }).start();
+}
     }
 
     private WebResourceResponse fetchNative(String url) {
