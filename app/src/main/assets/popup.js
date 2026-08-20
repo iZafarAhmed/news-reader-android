@@ -49,7 +49,7 @@ async function loadFeed() {
   const feed = customFeed || (currentPill !== "foryou" ? FEEDS.find(f => f.id === currentPill) : null);
   try {
     let items;
-    if (!feed) {                                   // For You = merged feeds
+    if (!feed) {
       subEl.textContent = "Building your briefing…";
       const results = await Promise.allSettled(FEEDS.map(f => fetch(f.url).then(r => r.text())));
       items = []; const seen = new Set();
@@ -101,7 +101,15 @@ function renderTop(item) {
   }
   const body = document.createElement("div"); body.className = "ts-body";
   const k = document.createElement("div"); k.className = "ts-kicker";
-  k.textContent = (m.source || "TOP STORY").toUpperCase();
+  if (m.sourceUrl) {
+    const fv = document.createElement("img");
+    fv.className = "fav"; fv.src = faviconFor(m.sourceUrl); fv.alt = "";
+    fv.addEventListener("error", () => fv.remove());
+    k.appendChild(fv);
+  }
+  const ks = document.createElement("span");
+  ks.textContent = (m.source || "TOP STORY").toUpperCase();
+  k.appendChild(ks);
   const h = document.createElement("div"); h.className = "ts-head"; h.textContent = m.headline;
   const mt = document.createElement("div"); mt.className = "ts-meta";
   const when = timeAgo(textOf(item, "pubDate"));
@@ -123,7 +131,12 @@ function row(item) {
   a.className = "row"; a.href = m.link; a.target = "_blank"; a.rel = "noopener";
   const txt = document.createElement("div"); txt.className = "txt";
   const sr = document.createElement("div"); sr.className = "srcline";
-  sr.textContent = (m.source || "") + "  •  " + timeAgo(textOf(item, "pubDate"));
+  sr.innerHTML =
+    (m.sourceUrl ? '<img class="fav" src="' + faviconFor(m.sourceUrl) + '" alt="">' : "") +
+    "<span>" + esc(m.source) + "</span>" +
+    "<span>•</span>" +
+    '<svg class="clk" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+    "<span>" + timeAgo(textOf(item, "pubDate")) + "</span>";
   const hd = document.createElement("div"); hd.className = "head"; hd.textContent = m.headline;
   txt.append(sr, hd); a.appendChild(txt);
   if (img) {
@@ -168,7 +181,9 @@ function renderSaved() {
     const a = document.createElement("a");
     a.className = "row"; a.href = s.link; a.target = "_blank"; a.rel = "noopener";
     const txt = document.createElement("div"); txt.className = "txt";
-    const sr = document.createElement("div"); sr.className = "srcline"; sr.textContent = s.source || "";
+    const sr = document.createElement("div"); sr.className = "srcline";
+    sr.innerHTML = (s.sourceUrl ? '<img class="fav" src="' + faviconFor(s.sourceUrl) + '" alt="">' : "") +
+      "<span>" + esc(s.source) + "</span>";
     const hd = document.createElement("div"); hd.className = "head"; hd.textContent = s.headline;
     txt.append(sr, hd); a.appendChild(txt);
     const b = document.createElement("button");
@@ -185,7 +200,7 @@ function renderSaved() {
   });
 }
 
-/* ---------- cluster sources (Google's own clustering) ---------- */
+/* ---------- cluster sources ---------- */
 function getCluster(item) {
   const d = item.querySelector("description");
   if (!d) return [];
@@ -246,9 +261,14 @@ function meta(item) {
   const link = textOf(item, "link") || "#";
   const sourceEl = item.querySelector("source");
   const source = sourceEl ? sourceEl.textContent.trim() : "";
+  const sourceUrl = sourceEl ? (sourceEl.getAttribute("url") || "") : "";
   const headline = source && title.endsWith(source)
     ? title.slice(0, -source.length).replace(/[-–]\s*$/, "").trim() : title;
-  return { title, link, source, headline };
+  return { title, link, source, sourceUrl, headline };
+}
+function faviconFor(url) {
+  try { return "https://www.google.com/s2/favicons?domain=" + new URL(url).hostname + "&sz=64"; }
+  catch (e) { return ""; }
 }
 function searchUrl(q) { return "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS; }
 function pretty(q) { return q.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
@@ -267,7 +287,7 @@ function timeAgo(rfc822) {
   return then.toLocaleDateString();
 }
 
-/* ---------- image extraction (enclosure / media:* / description) ---------- */
+/* ---------- image extraction ---------- */
 function getImageUrl(item) {
   const enclosure = item.querySelector("enclosure");
   if (enclosure) {
