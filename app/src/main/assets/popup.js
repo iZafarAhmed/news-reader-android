@@ -147,7 +147,7 @@ function saveBtn(m) {
   return b;
 }
 
-/* ---------- AI reader ---------- */
+/* ---------- AI reader (plain-text protocol — no JSON to break) ---------- */
 let rItem = null, rData = null, rLevel = "quick", rCluster = [], rRelated = [], aiSeq = 0;
 function openReader(item) {
   rItem = item; rCluster = getCluster(item); rRelated = relatedFor(item);
@@ -173,6 +173,11 @@ async function ensureAnalysis() {
   if (!key) { rData = fallbackAnalysis(); rData.ai = false; renderLevel(); toast("No AI key set — offline mode"); return; }
   try {
     rData = await aiAnalyze(key);
+    const fb = fallbackAnalysis();
+    if (!rData.quick.length) rData.quick = fb.quick;
+    if (!rData.summary.context) rData.summary.context = fb.summary.context;
+    if (!rData.summary.facts.length) rData.summary.facts = fb.summary.facts;
+    if (!rData.deep.timeline.length) rData.deep.timeline = fb.deep.timeline;
     rData.ai = true; aiCache[link] = rData; renderLevel();
   } catch (e) {
     console.error("AI Error:", e);
@@ -192,7 +197,7 @@ function aiRequest(key, payload) {
     } else {
       fetch(AI_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key }, body: JSON.stringify(payload) })
         .then(r => r.json().then(j => { clearTimeout(timer);
-          if (!r.ok) throw new Error(r.status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + r.status);
+          if (!r.ok) throw new Error(r.status === 429 ? "Rate limit (429) — wait ~1 min, then Retry" : "API HTTP " + r.status);
           resolve(j); }))
         .catch(e => { clearTimeout(timer); reject(e); });
     }
@@ -203,31 +208,61 @@ function aiAnalyze(key) {
   const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
   const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
   const payload = {
-    model: AI_MODEL, temperature: 0.1, max_tokens: 2048, stream: false,
+    model: AI_MODEL, temperature: 0.2, max_tokens: 1200, stream: false,
     chat_template_kwargs: { enable_thinking: false },
     messages: [
-      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown, no ```json blocks, no explanations). CRITICAL RULES: 1. Do not use double quotes inside string values (use single quotes instead). 2. Do not use trailing commas. 3. Keep strings concise. Shape: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
+      { role: "system", content:
+        "You are a news analyst. Reply in PLAIN TEXT only (no JSON, no markdown, no code fences) using EXACTLY this template, with each section word alone on its own line:\n" +
+        "QUICK\n- bullet\n- bullet\n- bullet\n" +
+        "CONTEXT\n2-3 sentences of context.\n" +
+        "FACTS\n- fact\n- fact\n- fact\n- fact\n" +
+        "TIMELINE\n- dated event\n- dated event\n" +
+        "PERSPECTIVES\nSIDE: name | VIEW: one sentence\nSIDE: name | VIEW: one sentence\n" +
+        "CONFIRMED\n- point\n- point\n" +
+        "UNCLEAR\n- point\n- point\n" +
+        "Keep every line under 25 words." },
       { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
     ]
   };
   const parse = res => {
-    if (res.http_status) throw new Error(res.http_status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + res.http_status);
+    if (res.http_status) throw new Error(res.http_status === 429 ? "Rate limit (429) — wait ~1 min, then Retry" : "API HTTP " + res.http_status);
     if (res.error) throw new Error(String(res.error));
     if (!res.choices || !res.choices[0]) throw new Error("Empty response from AI");
     const content = res.choices[0].message ? (res.choices[0].message.content || "") : "";
-    const start = content.indexOf("{"), end = content.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      let jsonStr = content.substring(start, end + 1).replace(/,\s*([\]}])/g, "$1");
-      try { return JSON.parse(jsonStr); }
-      catch (e2) { console.error("Bad JSON:", jsonStr); throw new Error("AI JSON syntax error"); }
-    }
-    throw new Error("AI returned no JSON");
+    const data = parseAnalysis(content);
+    if (!data.quick.length && !data.summary.context) throw new Error("AI returned unreadable text");
+    return data;
   };
   const call = p => aiRequest(key, p).then(parse);
   return call(payload).catch(e => {
     if (/400|unsupported|unknown/i.test(e.message)) { delete payload.chat_template_kwargs; return call(payload); }
     throw e;
   });
+}
+function parseAnalysis(t) {
+  const keys = ["QUICK", "CONTEXT", "FACTS", "TIMELINE", "PERSPECTIVES", "CONFIRMED", "UNCLEAR"];
+  const pos = k => { const m = new RegExp("(^|\\n)\\s*" + k + "\\s*:?\\s*(\\n|$)").exec(t); return m ? m.index + m[1].length : -1; };
+  const marks = keys.map(k => ({ k, i: pos(k) })).filter(x => x.i !== -1).sort((a, b) => a.i - b.i);
+  const out = { quick: [], summary: { context: "", facts: [] }, deep: { timeline: [], perspectives: [], confirmed: [], unclear: [] } };
+  for (let n = 0; n < marks.length; n++) {
+    let start = t.indexOf("\n", marks[n].i);
+    start = start === -1 ? marks[n].i : start + 1;
+    const end = n + 1 < marks.length ? marks[n + 1].i : t.length;
+    const body = t.substring(start, end).trim();
+    const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
+    const bullets = lines.map(l => l.replace(/^[-•*]\s*/, "")).filter(Boolean);
+    if (marks[n].k === "QUICK") out.quick = bullets.slice(0, 3);
+    else if (marks[n].k === "CONTEXT") out.summary.context = body.replace(/\s*\n\s*/g, " ");
+    else if (marks[n].k === "FACTS") out.summary.facts = bullets.slice(0, 5);
+    else if (marks[n].k === "TIMELINE") out.deep.timeline = bullets.slice(0, 6);
+    else if (marks[n].k === "PERSPECTIVES") out.deep.perspectives = lines.filter(l => l.includes("|")).map(l => {
+      const p = l.split("|");
+      return { side: (p[0] || "").replace(/^SIDE:\s*/i, "").trim(), view: (p[1] || "").replace(/^VIEW:\s*/i, "").trim() };
+    });
+    else if (marks[n].k === "CONFIRMED") out.deep.confirmed = bullets.slice(0, 5);
+    else if (marks[n].k === "UNCLEAR") out.deep.unclear = bullets.slice(0, 5);
+  }
+  return out;
 }
 function fallbackAnalysis() {
   const m = meta(rItem);
@@ -246,10 +281,10 @@ function renderLevel() {
     h = '<h5>📖 Summary · 2 min' + (d.ai ? "" : " · offline") + '</h5><div class="ctx">' + esc(d.summary.context) + '</div><h5>Key facts</h5><ul>' + d.summary.facts.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
   } else {
     h = '<h5>🔎 Deep Dive · 10 min' + (d.ai ? "" : " · offline") + '</h5>';
-    if (d.deep.timeline && d.deep.timeline.length) h += "<h5>Timeline</h5><ul>" + d.deep.timeline.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-    if (d.deep.perspectives && d.deep.perspectives.length) h += "<h5>Perspectives</h5>" + d.deep.perspectives.map(p => '<div class="persp"><b>' + esc(p.side) + "</b><br>" + esc(p.view) + "</div>").join("");
-    if (d.deep.confirmed && d.deep.confirmed.length) h += "<h5>✓ Confirmed</h5><ul>" + d.deep.confirmed.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-    if (d.deep.unclear && d.deep.unclear.length) h += "<h5>? Still unclear</h5><ul>" + d.deep.unclear.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+    if (d.deep.timeline.length) h += "<h5>Timeline</h5><ul>" + d.deep.timeline.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+    if (d.deep.perspectives.length) h += "<h5>Perspectives</h5>" + d.deep.perspectives.map(p => '<div class="persp"><b>' + esc(p.side) + "</b><br>" + esc(p.view) + "</div>").join("");
+    if (d.deep.confirmed.length) h += "<h5>✓ Confirmed</h5><ul>" + d.deep.confirmed.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+    if (d.deep.unclear.length) h += "<h5>? Still unclear</h5><ul>" + d.deep.unclear.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>";
     if (rCluster.length) h += '<h5>Sources (' + rCluster.length + ')</h5><ul>' + rCluster.slice(0, 6).map(c => '<li><a target="_blank" rel="noopener" href="' + c.link + '">' + esc(c.source) + "</a></li>").join("") + "</ul>";
     if (rRelated.length) h += "<h5>Related</h5><ul>" + rRelated.slice(0, 5).map(r => "<li>" + esc(textOf(r, "title")) + "</li>").join("") + "</ul>";
   }
