@@ -3,411 +3,116 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body { width: 660px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #fafafa; color: #111; }
-  header { position: sticky; top: 0; z-index: 20; overflow: visible; background: #fff; border-bottom: 1px solid #eee; padding: 10px 14px 10px; }
+:root { --bg:#f7f7f5; --card:#fff; --ink:#111; --mut:#8a8a8a; --line:#ececec; --acc:#1a73e8; }
+* { box-sizing: border-box; }
+body { width: 480px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+button { font-family: inherit; }
 
-  /* ---- minimal icon tabs ---- */
-  #tabs { display: flex; gap: 6px; overflow: visible; padding: 2px; }
-  .tab { position: relative; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: #5f6368; cursor: pointer; transition: background .15s, color .15s; }
-  .tab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
-  .tab:hover { background: #f1f3f4; color: #111; }
-  .tab:hover svg { transform: scale(1.15) rotate(-8deg); }
-  .tab.active { background: #e8f0fe; color: #1a73e8; }
-  /* ---- hover labels ---- */
-  .tab .tip {
-    position: absolute;
-    top: calc(100% + 7px);
-    left: 50%;
-    transform: translate(-50%, 4px);
-    background: #202124;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1;
-    padding: 6px 9px;
-    border-radius: 6px;
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    visibility: hidden;
-    transition: opacity .15s ease, transform .15s ease, visibility .15s;
-    z-index: 100;
-    box-shadow: 0 2px 8px rgba(0,0,0,.16);
-  }
-  .tab:hover .tip {
-    opacity: 1;
-    visibility: visible;
-    transform: translate(-50%, 0);
-  }
+/* top bar */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px; }
+.brand { font-size: 15px; font-weight: 800; letter-spacing: 2px; }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.iconbtn { border: none; background: transparent; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #444; }
+.iconbtn:hover { background: #ececec; }
+.iconbtn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg,#1a73e8,#7b4ae2); }
 
-  /* ---- geography switch ---- */
-  .geo-switch {
-    display: flex;
-    align-items: center;
-    height: 34px;
-    padding: 2px;
-    border: 1px solid #e0e0e0;
-    border-radius: 18px;
-    background: #f7f7f7;
-    flex: 0 0 auto;
-  }
+/* search */
+.searchwrap { padding: 0 16px 10px; }
+.search { position: relative; }
+.search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: #9a9a9a; fill: none; stroke-width: 2; stroke-linecap: round; }
+#q { width: 100%; padding: 10px 14px 10px 36px; border: none; border-radius: 12px; background: #eceae7; font-size: 13px; outline: none; }
+#q:focus { background: #fff; box-shadow: 0 0 0 2px var(--acc); }
 
-  .geo-option {
-    height: 30px;
-    min-width: 32px;
-    padding: 0 9px;
-    border: 0;
-    border-radius: 15px;
-    background: transparent;
-    color: #5f6368;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background .15s ease, color .15s ease, box-shadow .15s ease;
-  }
+/* category pills */
+.pills { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 16px 12px; border-bottom: 1px solid var(--line); }
+.pills::-webkit-scrollbar { display: none; }
+.pill { flex: 0 0 auto; border: 1px solid #e0dedb; background: #fff; color: #333; font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer; transition: .15s; }
+.pill.active { background: #111; color: #fff; border-color: #111; }
 
-  .geo-option:hover {
-    color: #111;
-  }
+/* briefing */
+.brief { padding: 16px 16px 4px; }
+.brief h2 { margin: 0; font-size: 13px; letter-spacing: 1.5px; font-weight: 800; }
+.brief p { margin: 2px 0 0; font-size: 12px; color: var(--mut); }
 
-  .geo-option.active {
-    background: #fff;
-    color: #1a73e8;
-    box-shadow: 0 1px 3px rgba(0,0,0,.16);
-  }
+/* top story */
+.topstory { margin: 12px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit; display: block; }
+.topstory .hero { width: 100%; height: 170px; object-fit: cover; display: block; }
+.ts-body { padding: 14px 16px; }
+.ts-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: 1.2px; color: var(--acc); }
+.ts-head { margin: 6px 0 8px; font-size: 17px; line-height: 1.35; font-weight: 700; }
+.ts-meta { font-size: 12px; color: var(--mut); display: flex; gap: 6px; align-items: center; }
+.ts-meta .src-chip { color: var(--acc); font-weight: 600; cursor: pointer; }
 
-  /* ---- search row ---- */
-  .bar { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-  .search { position: relative; flex: 1; }
-  .search > svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: #9aa0a6; fill: none; stroke-width: 2; stroke-linecap: round; }
-  #q { width: 100%; box-sizing: border-box; padding: 9px 14px 9px 34px; border: 1px solid #e0e0e0; border-radius: 20px; font-size: 13px; outline: none; background: #fff; transition: border .15s, box-shadow .15s; }
-  #q:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
-  .btn { border: none; background: #1a73e8; color: #fff; border-radius: 20px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
-  .btn:hover { background: #1667c9; }
-  .iconbtn { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: #5f6368; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .iconbtn:hover { background: #f1f3f4; color: #111; }
-  .iconbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .iconbtn.spin svg { animation: rot .6s linear; }
-  @keyframes rot { to { transform: rotate(360deg); } }
+/* latest list */
+.latest h3 { margin: 18px 16px 6px; font-size: 11px; letter-spacing: 1.2px; color: var(--mut); font-weight: 800; }
+.row { display: flex; gap: 12px; padding: 12px 16px; background: var(--card); border-top: 1px solid var(--line); text-decoration: none; color: inherit; }
+.row:first-child { border-top: none; }
+.row .txt { flex: 1; min-width: 0; }
+.row .srcline { font-size: 10.5px; font-weight: 700; letter-spacing: .6px; color: var(--mut); text-transform: uppercase; }
+.row .head { margin-top: 4px; font-size: 13.5px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row .thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
+.save { border: none; background: none; cursor: pointer; color: #bbb; width: 26px; height: 26px; flex: 0 0 auto; align-self: flex-start; }
+.save svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.save.on { color: var(--acc); }
+.save.on svg { fill: var(--acc); }
 
-  /* ---- intelligence mode ---- */
-  .mode-btn {
-    height: 34px;
-    padding: 0 11px;
-    border: 1px solid #e0e0e0;
-    border-radius: 17px;
-    background: #fff;
-    color: #5f6368;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background .15s ease, color .15s ease, border-color .15s ease;
-  }
+/* bottom nav */
+.bottomnav { position: sticky; bottom: 0; display: flex; background: #fff; border-top: 1px solid var(--line); }
+.bnav { flex: 1; border: none; background: none; padding: 9px 0 10px; cursor: pointer; color: #8a8a8a; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; }
+.bnav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bnav.active { color: var(--ink); }
 
-  .mode-btn:hover {
-    color: #111;
-    background: #f7f7f7;
-  }
-
-  .mode-btn.active {
-    color: #1a73e8;
-    border-color: #b7cdf5;
-    background: #e8f0fe;
-  }
-
-  /* ---- story clusters ---- */
-  .story-card {
-    grid-column: 1 / -1;
-    padding: 15px 16px;
-    border-bottom: 1px solid #f0f0f0;
-    background: #fff;
-  }
-
-  .story-card:hover {
-    background: #fafafa;
-  }
-
-  .story-label {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 8px;
-    color: #5f6368;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: .55px;
-    text-transform: uppercase;
-  }
-
-  .story-label .count {
-    padding: 3px 6px;
-    border-radius: 10px;
-    background: #f1f3f4;
-    color: #5f6368;
-    font-size: 9px;
-  }
-
-  .story-body {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .story-content {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .story-headline {
-    margin: 0;
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-    color: #171717;
-    font-size: 14.5px;
-    font-weight: 700;
-    line-height: 1.4;
-  }
-
-  .story-headline a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .story-headline a:hover {
-    text-decoration: underline;
-  }
-
-  .story-meta {
-    margin-top: 7px;
-    color: #9aa0a6;
-    font-size: 11px;
-  }
-
-  .story-sources {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 10px;
-  }
-
-  .story-source {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 7px;
-    border: 1px solid #ededed;
-    border-radius: 12px;
-    background: #fff;
-    color: #5f6368;
-    font-size: 10px;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
-  .story-source:hover {
-    background: #f5f7fa;
-    color: #111;
-  }
-
-  .story-source .source-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: #9aa0a6;
-  }
-
-  .story-image {
-    flex: 0 0 120px;
-    width: 120px;
-    height: 82px;
-    object-fit: cover;
-    border-radius: 7px;
-    background: #f1f3f4;
-  }
-
-  .story-card .story-image:only-child {
-    display: none;
-  }
-
-  /* ---- story intelligence ---- */
-  .story-signals { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
-  .story-signal { display:inline-flex; padding:3px 7px; border-radius:10px; background:#f5f7fa; color:#6b7280; font-size:9px; font-weight:700; }
-  .story-signal.strong { color:#1a73e8; background:#e8f0fe; }
-  .story-topic { margin-top:5px; color:#80868b; font-size:10.5px; }
-  .story-headline a { transition:color .15s ease; }
-  .story-headline a:hover { color:#1a73e8; }
-
-  /* ---- status + cards ---- */
-  #status .current-category { color: #1a73e8; }
-
-  #status { padding: 8px 16px; font-size: 11px; letter-spacing: .3px; text-transform: uppercase; color: #80868b; background: #fafafa; border-bottom: 1px solid #f0f0f0; font-weight: 600; }
-  #grid { display: grid; grid-template-columns: 1fr 1fr; background: #fff; }
-  .card { display: block; padding: 14px 16px; border-bottom: 1px solid #f2f2f2; text-decoration: none; color: inherit; transition: background .12s; }
-  .card:nth-child(odd) { border-right: 1px solid #f2f2f2; }
-  .card:hover { background: #fafafa; }
-  .source { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
-  .source img { width: 14px; height: 14px; border-radius: 50%; }
-  .source span { font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #666; }
-  .card-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-  .card-text { min-width: 0; flex: 1; }
-  .headline { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 14.5px; font-weight: 600; line-height: 1.45; color: #171717; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .thumb { flex: 0 0 88px; width: 88px; height: 64px; object-fit: cover; border-radius: 6px; background: #f1f3f4; display: block; }
-
-  .headline {
-    transition: color .15s ease;
-  }
-
-  .card:hover .headline {
-    color: #1a73e8 !important;
-  }
-
-  .meta { margin-top: 7px; font-size: 11.5px; color: #9aa0a6; }
-
-  /* ---- responsive layout ---- */
-  @media (max-width: 560px) {
-    body {
-      width: 100%;
-      min-width: 0;
-    }
-
-    header {
-      padding-left: 10px;
-      padding-right: 10px;
-    }
-
-    #tabs {
-      gap: 3px;
-      overflow-x: auto;
-      overflow-y: visible;
-      padding-bottom: 3px;
-    }
-
-    .tab {
-      width: 34px;
-      height: 34px;
-    }
-
-    .bar {
-      flex-wrap: wrap;
-    }
-
-    .search {
-      flex: 1 1 100%;
-      min-width: 0;
-    }
-
-    #q {
-      width: 100%;
-    }
-
-    .btn {
-      flex: 0 0 auto;
-    }
-
-    .geo-switch,
-    .mode-btn,
-    .iconbtn {
-      flex: 0 0 auto;
-    }
-
-    #grid {
-      grid-template-columns: 1fr;
-    }
-
-    .card:nth-child(odd) {
-      border-right: none;
-    }
-
-    .card {
-      padding: 12px 13px;
-    }
-
-    .thumb {
-      flex-basis: 82px;
-      width: 82px;
-      height: 60px;
-    }
-
-    #status {
-      padding-left: 12px;
-      padding-right: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-  }
-
-  @media (max-width: 390px) {
-    .headline {
-      font-size: 14px;
-    }
-
-    .source span {
-      font-size: 10px;
-    }
-
-    .thumb {
-      flex-basis: 74px;
-      width: 74px;
-      height: 56px;
-    }
-
-    .btn {
-      padding-left: 12px;
-      padding-right: 12px;
-    }
-
-    .geo-option {
-      min-width: 29px;
-      padding-left: 7px;
-      padding-right: 7px;
-    }
-
-    .mode-btn {
-      padding-left: 8px;
-      padding-right: 8px;
-    }
-  }
-
-
-  .story-headline a {
-    color: #171717;
-    transition: color .15s ease;
-  }
-
-  .story-card:hover .story-headline a {
-    color: #1a73e8 !important;
-  }
-
+/* sources sheet, scrim, toast */
+#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; z-index: 15; }
+#sheet { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); max-height: 70%; overflow: auto; display: none; z-index: 20; padding: 14px 0 20px; }
+#sheet h4 { margin: 0 16px 8px; font-size: 12px; letter-spacing: 1px; color: var(--mut); }
+#sheet a { display: block; padding: 10px 16px; text-decoration: none; color: var(--ink); font-size: 13px; border-top: 1px solid #f2f2f2; }
+#sheet a span { color: var(--mut); font-size: 11px; display: block; margin-top: 2px; }
+#toast { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); background: #202124; color: #fff; font-size: 12px; padding: 8px 14px; border-radius: 999px; opacity: 0; pointer-events: none; transition: .2s; z-index: 30; }
+#toast.show { opacity: 1; }
 </style>
 </head>
 <body>
-  <header>
-    <div id="tabs"></div>
-    <form id="form" class="bar">
-      <div class="search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/></svg>
-        <input id="q" type="text" placeholder="Search any topic…" />
-      </div>
-      <button class="btn" type="submit">Search</button>
-
-      <div class="geo-switch" id="geoSwitch" role="group" aria-label="News geography">
-        <button type="button" class="geo-option" data-geo="US" id="geoUS">US</button>
-        <button type="button" class="geo-option" data-geo="IN" id="geoIN">IN</button>
-      </div>
-
-      <button class="mode-btn" type="button" id="storyMode" aria-pressed="false" title="Group similar stories">
-        Stories
-      </button>
-
-      <button class="iconbtn" type="button" id="refresh" title="Refresh">
-        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      </button>
-    </form>
+  <header class="topbar">
+    <span class="brand">NEWS</span>
+    <div class="top-actions">
+      <button class="iconbtn" id="bell" title="Notifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/></svg></button>
+      <span class="avatar"></span>
+    </div>
   </header>
-  <div id="status">Loading…</div>
-  <div id="grid"></div>
-  <script src="popup.js"></script>
 
+  <div class="searchwrap">
+    <form id="form" class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/></svg>
+      <input id="q" type="text" placeholder="Search news, topics, people" />
+    </form>
+  </div>
+
+  <nav class="pills" id="pills"></nav>
+
+  <section class="brief" id="brief">
+    <h2 id="greet"></h2>
+    <p id="sub"></p>
+  </section>
+
+  <a class="topstory" id="topstory" href="#" target="_blank" rel="noopener"></a>
+
+  <section class="latest">
+    <h3 id="latestTitle">LATEST STORIES</h3>
+    <div id="grid"></div>
+  </section>
+
+  <nav class="bottomnav">
+    <button class="bnav active" id="navHome"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Home</button>
+    <button class="bnav" id="navSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/></svg>Search</button>
+    <button class="bnav" id="navSaved"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Saved</button>
+    <button class="bnav" id="navMenu"><svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>More</button>
+  </nav>
+
+  <div id="scrim"></div>
+  <div id="sheet"></div>
+  <div id="toast"></div>
+  <script src="popup.js"></script>
 </body>
 </html>
