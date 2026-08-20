@@ -1,7 +1,6 @@
 const LANG_PARAMS = "&hl=en-US&gl=US&ceid=US:en";
 const T = id => "https://news.google.com/rss/topics/" + id + "?hl=en-US&gl=US&ceid=US%3Aen";
 const S = q  => "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS;
-
 const AI_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 let AI_MODEL = localStorage.getItem("aiModel") || "nvidia/nemotron-3.5-lightning-30b-a3b";
 
@@ -39,7 +38,6 @@ let currentSub = null, customFeed = null, lastItems = [];
 let saved = JSON.parse(localStorage.getItem("saved") || "[]");
 const aiCache = {};
 
-/* ---------- pills & subs ---------- */
 function renderPills() {
   pillsEl.innerHTML = "";
   const mk = (id, label, ico) => {
@@ -63,7 +61,6 @@ function renderSubs() {
   cat.subs.forEach((s, i) => mk(s.label, currentSub === i, () => { currentSub = i; renderSubs(); loadFeed(); }));
 }
 
-/* ---------- loading ---------- */
 async function loadFeed() {
   setNav("home"); sheetHide();
   gridEl.innerHTML = ""; topstoryEl.style.display = "none";
@@ -104,7 +101,6 @@ function parseItems(text) {
   return [...xml.querySelectorAll("item")].map(it => { it._t = new Date(textOf(it, "pubDate")).getTime() || 0; return it; });
 }
 
-/* ---------- cards ---------- */
 function renderTop(item) {
   const m = meta(item), cluster = getCluster(item), img = getImageUrl(item);
   topstoryEl.href = m.link; topstoryEl.innerHTML = "";
@@ -133,7 +129,7 @@ function row(item) {
   const hd = document.createElement("div"); hd.className = "head"; hd.textContent = m.headline;
   txt.append(sr, hd); a.appendChild(txt);
   if (img) { const im = document.createElement("img"); im.className = "thumb"; im.src = img; im.loading = "lazy"; im.addEventListener("error", () => im.remove()); a.appendChild(im); }
-  const ai = document.createElement("button"); ai.className = "save ai"; ai.textContent = "✨"; ai.title = "Quick / Summary / Deep Dive";
+  const ai = document.createElement("button"); ai.className = "save ai"; ai.textContent = "✨";
   ai.onclick = e => { e.preventDefault(); e.stopPropagation(); openReader(item); };
   a.appendChild(ai);
   a.appendChild(saveBtn(m));
@@ -151,8 +147,8 @@ function saveBtn(m) {
   return b;
 }
 
-/* ---------- AI reader: Quick / Summary / Deep Dive ---------- */
-let rItem = null, rData = null, rLevel = "quick", rCluster = [], rRelated = [];
+/* ---------- AI reader ---------- */
+let rItem = null, rData = null, rLevel = "quick", rCluster = [], rRelated = [], aiSeq = 0;
 function openReader(item) {
   rItem = item; rCluster = getCluster(item); rRelated = relatedFor(item);
   rData = null; rLevel = "quick";
@@ -169,34 +165,6 @@ document.querySelectorAll(".lvl").forEach(b => b.onclick = () => {
   document.querySelectorAll(".lvl").forEach(x => x.classList.toggle("active", x === b));
   renderLevel();
 });
-
-let aiSeq = 0;
-function aiRequest(key, payload) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
-    if (window.AndroidBridge) {
-      const cbName = "__aiCb" + (++aiSeq);
-      window[cbName] = str => {
-        clearTimeout(timer); delete window[cbName];
-        try { resolve(JSON.parse(str)); } catch (e) { reject(new Error("Bad bridge response")); }
-      };
-      AndroidBridge.postJson(AI_URL, key, JSON.stringify(payload), cbName);
-    } else {
-      fetch(AI_URL, { method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-        body: JSON.stringify(payload) })
-        .then(r => r.json().then(j => {
-          clearTimeout(timer);
-          if (!r.ok) throw new Error(r.status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + r.status);
-          resolve(j);
-        }))
-        .catch(e => { clearTimeout(timer); reject(e); });
-    }
-  });
-}
-
-function aiAnalyze(key) {
-
 async function ensureAnalysis() {
   const link = meta(rItem).link;
   if (aiCache[link]) { rData = aiCache[link]; renderLevel(); return; }
@@ -209,21 +177,66 @@ async function ensureAnalysis() {
   } catch (e) {
     console.error("AI Error:", e);
     rData = fallbackAnalysis(); rData.ai = false; renderLevel();
-    $("rBody").insertAdjacentHTML("afterbegin",
-      '<p class="r-note">⚠ ' + esc(e.message) + ' <button class="subchip active" id="retryAi">Retry</button></p>');
+    $("rBody").insertAdjacentHTML("afterbegin", '<p class="r-note">⚠ ' + esc(e.message) + ' <button class="subchip active" id="retryAi">Retry</button></p>');
     $("retryAi").onclick = () => { delete aiCache[link]; ensureAnalysis(); };
   }
 }
-
+function aiRequest(key, payload) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Request timed out")), 200000);
+    if (window.AndroidBridge) {
+      const cbName = "__aiCb" + (++aiSeq);
+      window[cbName] = str => { clearTimeout(timer); delete window[cbName];
+        try { resolve(JSON.parse(str)); } catch (e) { reject(new Error("Bad bridge response")); } };
+      AndroidBridge.postJson(AI_URL, key, JSON.stringify(payload), cbName);
+    } else {
+      fetch(AI_URL, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key }, body: JSON.stringify(payload) })
+        .then(r => r.json().then(j => { clearTimeout(timer);
+          if (!r.ok) throw new Error(r.status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + r.status);
+          resolve(j); }))
+        .catch(e => { clearTimeout(timer); reject(e); });
+    }
+  });
+}
+function aiAnalyze(key) {
+  const m = meta(rItem);
+  const others = rCluster.slice(0, 6).map(c => "- " + c.title + " (" + c.source + ")").join("\n");
+  const rel = rRelated.slice(0, 5).map(r => "- " + textOf(r, "title")).join("\n");
+  const payload = {
+    model: AI_MODEL, temperature: 0.1, max_tokens: 2048, stream: false,
+    chat_template_kwargs: { enable_thinking: false },
+    messages: [
+      { role: "system", content: 'You are a news analyst. Reply with ONLY valid JSON (no markdown, no ```json blocks, no explanations). CRITICAL RULES: 1. Do not use double quotes inside string values (use single quotes instead). 2. Do not use trailing commas. 3. Keep strings concise. Shape: {"quick":[3 short strings],"summary":{"context":"2-3 sentence context","facts":[4 short strings]},"deep":{"timeline":[4-6 dated strings],"perspectives":[{"side":string,"view":string}],"confirmed":[strings],"unclear":[strings]}}' },
+      { role: "user", content: "Headline: " + m.headline + "\nSource: " + m.source + "\nPublished: " + textOf(rItem, "pubDate") + "\nOther coverage:\n" + (others || "none") + "\nRelated stories:\n" + (rel || "none") }
+    ]
+  };
+  const parse = res => {
+    if (res.http_status) throw new Error(res.http_status === 429 ? "Rate limit (429) — wait ~1 min and retry" : "API HTTP " + res.http_status);
+    if (res.error) throw new Error(String(res.error));
+    if (!res.choices || !res.choices[0]) throw new Error("Empty response from AI");
+    const content = res.choices[0].message ? (res.choices[0].message.content || "") : "";
+    const start = content.indexOf("{"), end = content.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      let jsonStr = content.substring(start, end + 1).replace(/,\s*([\]}])/g, "$1");
+      try { return JSON.parse(jsonStr); }
+      catch (e2) { console.error("Bad JSON:", jsonStr); throw new Error("AI JSON syntax error"); }
+    }
+    throw new Error("AI returned no JSON");
+  };
+  const call = p => aiRequest(key, p).then(parse);
+  return call(payload).catch(e => {
+    if (/400|unsupported|unknown/i.test(e.message)) { delete payload.chat_template_kwargs; return call(payload); }
+    throw e;
+  });
+}
 function fallbackAnalysis() {
   const m = meta(rItem);
   return {
     quick: rCluster.length ? rCluster.slice(0, 3).map(c => c.source + ": " + c.title) : [m.headline],
-    summary: { context: "Offline mode (no AI key set or API error). Latest coverage via " + (m.source || "one source") + ".", facts: rCluster.slice(0, 4).map(c => c.source + " — " + c.title) },
+    summary: { context: "Offline mode (no AI available). Latest coverage via " + (m.source || "one source") + ".", facts: rCluster.slice(0, 4).map(c => c.source + " — " + c.title) },
     deep: { timeline: rRelated.slice(0, 5).map(r => timeAgo(textOf(r, "pubDate")) + " — " + textOf(r, "title")), perspectives: [], confirmed: [], unclear: [] }
   };
 }
-
 function renderLevel() {
   const d = rData; if (!d) return;
   const b = $("rBody"); let h = "";
@@ -271,7 +284,7 @@ function renderSaved() {
   });
 }
 
-/* ---------- cluster sheet / settings ---------- */
+/* ---------- sheets / settings ---------- */
 function getCluster(item) {
   const d = item.querySelector("description"); if (!d) return [];
   let html = ""; try { html = d.innerHTML || ""; } catch (e) {}
@@ -288,7 +301,7 @@ function showSheet(cluster) {
 function openSettings() {
   sheetEl.innerHTML = "<h4>⚙ SETTINGS · AI</h4>" +
     '<div class="setrow"><input id="keyIn" type="password" placeholder="NVIDIA API key (nvapi-…)" value="' + (localStorage.getItem("nvidiaKey") || "") + '"></div>' +
-    '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID (e.g. nvidia/nemotron...)" value="' + AI_MODEL + '"></div>' +
+    '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID" value="' + AI_MODEL + '"></div>' +
     '<div class="setrow"><button class="subchip active" id="aiSave">Save</button></div>';
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
   $("aiSave").onclick = () => {
@@ -301,13 +314,12 @@ function openSettings() {
 function sheetHide() { sheetEl.style.display = "none"; scrimEl.style.display = "none"; }
 scrimEl.onclick = sheetHide;
 
-/* ---------- nav / refresh / pull-to-refresh ---------- */
+/* ---------- nav / refresh / pull ---------- */
 function setNav(v) { $("navHome").classList.toggle("active", v === "home"); $("navSaved").classList.toggle("active", v === "saved"); }
 let toastTimer;
 function toast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800); }
 function doRefresh() { refreshBtn.classList.remove("spin"); void refreshBtn.offsetWidth; refreshBtn.classList.add("spin"); loadFeed(); }
 refreshBtn.onclick = doRefresh;
-
 let ptrStart = null, ptrGo = false;
 document.addEventListener("touchstart", e => { if (window.scrollY === 0 && !readerEl.classList.contains("open")) ptrStart = e.touches[0].clientY; }, { passive: true });
 document.addEventListener("touchmove", e => {
