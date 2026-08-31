@@ -3,6 +3,10 @@ const T = id => "https://news.google.com/rss/topics/" + id + "?hl=en-US&gl=US&ce
 const S = q  => "https://news.google.com/rss/search?q=" + encodeURIComponent(q) + LANG_PARAMS;
 const AI_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 let AI_MODEL = localStorage.getItem("aiModel") || "nvidia/nemotron-3.5-lightning-30b-a3b";
+let SUPA_URL = localStorage.getItem("supaUrl") || "";
+let SUPA_KEY = localStorage.getItem("supaKey") || "";
+const supaReady = () => SUPA_URL && SUPA_KEY;
+const supaBase = () => SUPA_URL.replace(/\/$/, "") + "/rest/v1/";
 
 const CATS = [
   { id: "settlers", ico: "🗞️", label: "Settlers", url: S("Israeli-settlers"), subs: [] },
@@ -31,7 +35,7 @@ const $ = id => document.getElementById(id);
 const gridEl = $("grid"), pillsEl = $("pills"), subsEl = $("subs"), topstoryEl = $("topstory"),
       briefEl = $("brief"), greetEl = $("greet"), subEl = $("sub"), latestTitle = $("latestTitle"),
       sheetEl = $("sheet"), scrimEl = $("scrim"), toastEl = $("toast"), input = $("q"),
-      refreshBtn = $("refresh"), ptrEl = $("ptr"), readerEl = $("reader");
+      refreshBtn = $("refresh"), ptrEl = $("ptr"), readerEl = $("reader"), calEl = $("cal");
 
 let currentCat = localStorage.getItem("pill") || "foryou";
 let currentSub = null, customFeed = null, lastItems = [];
@@ -62,7 +66,7 @@ function renderSubs() {
 }
 
 async function loadFeed() {
-  setNav("home"); sheetHide();
+  setNav("home"); sheetHide(); calEl.classList.remove("show");
   gridEl.innerHTML = ""; topstoryEl.style.display = "none";
   latestTitle.textContent = "LATEST STORIES";
   const cat = CATS.find(c => c.id === currentCat);
@@ -90,10 +94,10 @@ async function loadFeed() {
       subEl.textContent = items.length + " articles · newest first";
     }
     lastItems = items;
+    archiveItems(items, label); // → Supabase (deduped by link)
     if (!items.length) { subEl.textContent = "No stories found"; return; }
     renderTop(items[0]);
     warm(items[0]);
-    /* 5 compact rows, then 1 featured hero card */
     const rest = items.slice(1);
     for (let i = 0; i < rest.length; i++) {
       gridEl.appendChild(row(rest[i]));
@@ -111,6 +115,106 @@ function parseItems(text) {
   let xml = new DOMParser().parseFromString(text, "application/xml");
   if (xml.querySelector("parsererror")) xml = new DOMParser().parseFromString(text.replace(/&nbsp;/g, "&#160;"), "application/xml");
   return [...xml.querySelectorAll("item")].map(it => { it._t = new Date(textOf(it, "pubDate")).getTime() || 0; return it; });
+}
+
+/* ---------- Supabase archive ---------- */
+function archiveItems(items, category) {
+  if (!supaReady() || !items.length) return;
+  const rows = items.map(it => {
+    const m = meta(it);
+    const ts = new Date(textOf(it, "pubDate"));
+    return {
+      link: m.link, title: m.title, headline: m.headline, source: m.source,
+      source_url: m.sourceUrl, image_url: getImageUrl(it), category: category,
+      pub_ts: isNaN(ts) ? null : ts.toISOString(),
+      pub_date: isNaN(ts) ? null : ts.toISOString().slice(0, 10)
+    };
+  });
+  fetch(supaBase() + "news?on_conflict=link", {
+    method: "POST",
+    headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(rows)
+  }).catch(() => {});
+}
+
+/* ---------- calendar / archive view ---------- */
+let calY, calM, selDate = null;
+const iso = (y, m, d) => y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+function renderArchive() {
+  setNav("archive"); sheetHide(); readerEl.classList.remove("open");
+  briefEl.style.display = "block";
+  greetEl.textContent = "ARCHIVE";
+  subEl.textContent = supaReady() ? "Pick a date to revisit that day's news" : "Add Supabase URL & key in ☰ More";
+  topstoryEl.style.display = "none";
+  gridEl.innerHTML = "";
+  const now = new Date();
+  if (calY === undefined) { calY = now.getFullYear(); calM = now.getMonth(); }
+  drawCal();
+  if (selDate) loadDay(selDate); else latestTitle.textContent = "STORIES ON THIS DATE";
+}
+async function drawCal() {
+  calEl.innerHTML = ""; calEl.classList.add("show");
+  const head = document.createElement("div"); head.className = "cal-head";
+  const prev = document.createElement("button"); prev.textContent = "‹";
+  prev.onclick = () => { calM--; if (calM < 0) { calM = 11; calY--; } drawCal(); };
+  const next = document.createElement("button"); next.textContent = "›";
+  next.onclick = () => { calM++; if (calM > 11) { calM = 0; calY++; } drawCal(); };
+  const title = document.createElement("span"); title.id = "calTitle";
+  title.textContent = new Date(calY, calM).toLocaleString("en", { month: "long", year: "numeric" });
+  head.append(prev, title, next); calEl.appendChild(head);
+  const g = document.createElement("div"); g.className = "cal-grid";
+  ["S","M","T","W","T","F","S"].forEach(d => { const s = document.createElement("span"); s.className = "dow"; s.textContent = d; g.appendChild(s); });
+  const first = new Date(calY, calM, 1).getDay();
+  const dim = new Date(calY, calM + 1, 0).getDate();
+  for (let i = 0; i < first; i++) { const e = document.createElement("span"); e.className = "day empty"; g.appendChild(e); }
+  const today = new Date(); const todayStr = iso(today.getFullYear(), today.getMonth(), today.getDate());
+  const hasSet = new Set();
+  if (supaReady()) {
+    try {
+      const r = await fetch(supaBase() + "news?select=pub_date&pub_date=gte." + iso(calY, calM, 1) + "&pub_date=lte." + iso(calY, calM, dim) + "&limit=1000",
+        { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
+      if (r.ok) (await r.json()).forEach(x => hasSet.add(x.pub_date));
+    } catch (e) {}
+  }
+  for (let d = 1; d <= dim; d++) {
+    const ds = iso(calY, calM, d);
+    const b = document.createElement("button");
+    b.className = "day" + (ds === todayStr ? " today" : "") + (ds === selDate ? " sel" : "") + (hasSet.has(ds) ? " has" : "");
+    b.textContent = d;
+    b.onclick = () => { selDate = ds; drawCal(); loadDay(ds); };
+    g.appendChild(b);
+  }
+  calEl.appendChild(g);
+}
+async function loadDay(dateStr) {
+  latestTitle.textContent = "STORIES ON " + dateStr;
+  gridEl.innerHTML = "";
+  if (!supaReady()) return;
+  try {
+    const r = await fetch(supaBase() + "news?pub_date=eq." + dateStr + "&order=pub_ts.desc&limit=300",
+      { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const rows = await r.json();
+    if (!rows.length) { gridEl.innerHTML = '<div class="row"><div class="txt"><div class="head" style="color:#999">No archived stories for this date.</div></div></div>'; return; }
+    rows.forEach(d => gridEl.appendChild(archiveRow(d)));
+  } catch (e) {
+    gridEl.innerHTML = '<div class="row"><div class="txt"><div class="head" style="color:#999">Archive error: ' + esc(e.message) + "</div></div></div>";
+  }
+}
+function archiveRow(d) {
+  const a = document.createElement("a"); a.className = "row"; a.href = d.link; a.target = "_blank"; a.rel = "noopener";
+  const txt = document.createElement("div"); txt.className = "txt";
+  const sr = document.createElement("div"); sr.className = "srcline";
+  sr.innerHTML = (d.source_url ? '<img class="fav" src="' + faviconFor(d.source_url) + '" alt="">' : "") +
+    '<span class="src">' + esc(d.source || "") + "</span><span>•</span>" +
+    '<svg class="clk" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+    "<span>" + timeAgo(d.pub_ts) + "</span>" +
+    (d.category ? "<span>• " + esc(d.category) + "</span>" : "");
+  const hd = document.createElement("div"); hd.className = "head"; hd.textContent = d.headline || d.title;
+  txt.append(sr, hd); a.appendChild(txt);
+  if (d.image_url) { const im = document.createElement("img"); im.className = "thumb"; im.src = d.image_url; im.loading = "lazy"; im.addEventListener("error", () => im.remove()); a.appendChild(im); }
+  a.appendChild(saveBtn({ link: d.link, source: d.source, sourceUrl: d.source_url, headline: d.headline || d.title }));
+  return a;
 }
 
 /* ---------- hero cards ---------- */
@@ -161,7 +265,7 @@ function saveBtn(m) {
   return b;
 }
 
-/* ---------- AI reader: single unified analysis ---------- */
+/* ---------- AI reader ---------- */
 let rItem = null, rData = null, rCluster = [], rRelated = [], aiSeq = 0;
 function openReader(item) {
   rItem = item; rCluster = getCluster(item); rRelated = relatedFor(item);
@@ -173,7 +277,6 @@ function openReader(item) {
   ensureAnalysis();
 }
 $("rClose").onclick = () => readerEl.classList.remove("open");
-
 async function ensureAnalysis() {
   const link = meta(rItem).link;
   if (aiCache[link]) { rData = aiCache[link]; renderAnalysis(); return; }
@@ -319,7 +422,7 @@ function relatedFor(item) {
 
 /* ---------- saved ---------- */
 function renderSaved() {
-  setNav("saved"); sheetHide(); readerEl.classList.remove("open");
+  setNav("saved"); sheetHide(); readerEl.classList.remove("open"); calEl.classList.remove("show");
   briefEl.style.display = "block"; greetEl.textContent = "SAVED";
   subEl.textContent = saved.length + (saved.length === 1 ? " story" : " stories");
   topstoryEl.style.display = "none"; latestTitle.textContent = "YOUR READING LIST";
@@ -354,23 +457,31 @@ function showSheet(cluster) {
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
 }
 function openSettings() {
-  sheetEl.innerHTML = "<h4>⚙ SETTINGS · AI</h4>" +
+  sheetEl.innerHTML = "<h4>⚙ SETTINGS · AI + ARCHIVE</h4>" +
     '<div class="setrow"><input id="keyIn" type="password" placeholder="NVIDIA API key (nvapi-…)" value="' + (localStorage.getItem("nvidiaKey") || "") + '"></div>' +
     '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID" value="' + AI_MODEL + '"></div>' +
+    '<div class="setrow"><input id="supaUrlIn" type="text" placeholder="Supabase URL (https://xxx.supabase.co)" value="' + SUPA_URL + '"></div>' +
+    '<div class="setrow"><input id="supaKeyIn" type="password" placeholder="Supabase anon key" value="' + SUPA_KEY + '"></div>' +
     '<div class="setrow"><button class="subchip active" id="aiSave">Save</button></div>';
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
   $("aiSave").onclick = () => {
     localStorage.setItem("nvidiaKey", $("keyIn").value.trim());
     AI_MODEL = $("modelIn").value.trim() || AI_MODEL;
     localStorage.setItem("aiModel", AI_MODEL);
-    sheetHide(); toast("AI settings saved");
+    SUPA_URL = $("supaUrlIn").value.trim(); localStorage.setItem("supaUrl", SUPA_URL);
+    SUPA_KEY = $("supaKeyIn").value.trim(); localStorage.setItem("supaKey", SUPA_KEY);
+    sheetHide(); toast("Settings saved");
   };
 }
 function sheetHide() { sheetEl.style.display = "none"; scrimEl.style.display = "none"; }
 scrimEl.onclick = sheetHide;
 
 /* ---------- nav / refresh / pull ---------- */
-function setNav(v) { $("navHome").classList.toggle("active", v === "home"); $("navSaved").classList.toggle("active", v === "saved"); }
+function setNav(v) {
+  $("navHome").classList.toggle("active", v === "home");
+  $("navSaved").classList.toggle("active", v === "saved");
+  $("navArchive").classList.toggle("active", v === "archive");
+}
 let toastTimer;
 function toast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800); }
 function doRefresh() { refreshBtn.classList.remove("spin"); void refreshBtn.offsetWidth; refreshBtn.classList.add("spin"); loadFeed(); }
@@ -395,6 +506,7 @@ $("form").addEventListener("submit", e => {
 $("navHome").onclick = () => { customFeed = null; renderPills(); renderSubs(); loadFeed(); };
 $("navSearch").onclick = () => { window.scrollTo({ top: 0 }); input.focus(); };
 $("navSaved").onclick = renderSaved;
+$("navArchive").onclick = renderArchive;
 $("navMenu").onclick = openSettings;
 $("bell").onclick = () => toast("Notifications — coming soon");
 
