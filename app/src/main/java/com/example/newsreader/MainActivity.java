@@ -30,8 +30,8 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
 
-    private WebView web;      // the news app UI
-    private WebView browser;  // in-app article browser
+    private WebView web;
+    private WebView browser;
     private View browserBox;
     private TextView barTitle;
 
@@ -40,7 +40,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        /* ----- main app WebView ----- */
         web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -57,12 +56,11 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (url.startsWith("file://")) return false;
-                openBrowser(url);              // ← in-app instead of Chrome
+                openBrowser(url);
                 return true;
             }
         });
 
-        /* ----- in-app article browser ----- */
         browser = new WebView(this);
         WebSettings bs = browser.getSettings();
         bs.setJavaScriptEnabled(true);
@@ -77,7 +75,7 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String u = request.getUrl().toString();
-                if (u.startsWith("http://") || u.startsWith("https://")) return false; // stay in-app
+                if (u.startsWith("http://") || u.startsWith("https://")) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception e) {}
                 return true;
             }
@@ -139,7 +137,6 @@ public class MainActivity extends Activity {
         browser.loadUrl("about:blank");
     }
 
-    /** Back: article history → close article → reader → sheet → exit. */
     @Override
     public void onBackPressed() {
         if (browserBox.getVisibility() == View.VISIBLE) {
@@ -161,7 +158,6 @@ public class MainActivity extends Activity {
             });
     }
 
-    /** Native POST for the NVIDIA API. */
     public class Bridge {
         @JavascriptInterface
         public void postJson(final String url, final String token, final String body, final String cb) {
@@ -177,9 +173,8 @@ public class MainActivity extends Activity {
                     c.setRequestProperty("Authorization", "Bearer " + token);
                     c.getOutputStream().write(body.getBytes("UTF-8"));
                     int code = c.getResponseCode();
-                    if (code >= 400) {
-                        out = "{\"http_status\":" + code + "}";
-                    } else {
+                    if (code >= 400) out = "{\"http_status\":" + code + "}";
+                    else {
                         InputStream in = c.getInputStream();
                         ByteArrayOutputStream bo = new ByteArrayOutputStream();
                         byte[] buf = new byte[4096]; int n;
@@ -190,6 +185,31 @@ public class MainActivity extends Activity {
                     String msg = e.getMessage() == null ? e.toString() : e.getMessage();
                     out = "{\"error\":\"" + msg.replace("\"", "'") + "\"}";
                 }
+                final String js = cb + "(" + JSONObject.quote(out) + ");";
+                web.post(() -> web.evaluateJavascript(js, null));
+            }).start();
+        }
+
+        /** NEW: follow Google's 302 and return the real publisher URL (never downloads the article). */
+        @JavascriptInterface
+        public void resolveRedirect(final String url, final String cb) {
+            new Thread(() -> {
+                String out = url;
+                try {
+                    String u = url;
+                    for (int i = 0; i < 3; i++) {
+                        HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
+                        c.setInstanceFollowRedirects(false);
+                        c.setConnectTimeout(10000);
+                        c.setReadTimeout(10000);
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
+                        int code = c.getResponseCode();
+                        String loc = c.getHeaderField("Location");
+                        c.disconnect();
+                        if (code >= 300 && code < 400 && loc != null) u = loc; else break;
+                    }
+                    out = u;
+                } catch (Exception e) { /* keep original on failure */ }
                 final String js = cb + "(" + JSONObject.quote(out) + ");";
                 web.post(() -> web.evaluateJavascript(js, null));
             }).start();
