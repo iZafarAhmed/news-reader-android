@@ -170,29 +170,42 @@ async function mapPool(list, fn, size) {
 /* ---------- one-time migration of the 9,454 old rows ---------- */
 async function migrateLinks() {
   if (!supaReady()) { toast("Add Supabase credentials first"); return; }
-  let fixed = 0, stuck = 0;
+  let fixed = 0, stuck = 0, first = true;
   toast("Fixing links… 0");
+  const q = "news?link=like." + encodeURIComponent("%news.google.com/rss/articles/%") + "&select=id,link&limit=50&order=id";
   while (stuck < 3) {
-    const r = await fetch(supaBase() + "news?link=like.%news.google.com/rss/articles/%&select=id,link&limit=50",
-      { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
-    if (!r.ok) break;
-    const rows = await r.json();
+    let rows = [];
+    try {
+      const r = await fetch(supaBase() + q, { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
+      if (!r.ok) { toast("Supabase query HTTP " + r.status); return; }
+      rows = await r.json();
+    } catch (e) { toast("Supabase error: " + e.message); return; }
     if (!rows.length) break;
+
     const resolved = await mapPool(rows.map(x => x.link), resolveRealUrl, 6);
-    let changed = 0;
+
+    if (first) { // resolver self-test on the very first row
+      first = false;
+      if (!resolved[0] || resolved[0] === rows[0].link) {
+        toast("Resolver test failed — no redirect found");
+        return;
+      }
+    }
+
+    const jobs = [];
     for (let i = 0; i < rows.length; i++) {
       if (resolved[i] && resolved[i] !== rows[i].link) {
-        changed++;
-        await fetch(supaBase() + "news?id=eq." + rows[i].id, {
+        jobs.push(fetch(supaBase() + "news?id=eq." + rows[i].id, {
           method: "PATCH",
           headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
           body: JSON.stringify({ link: resolved[i] })
-        }).catch(() => {});
+        }).catch(() => {}));
       }
     }
-    fixed += changed;
-    toast("Fixing links… " + fixed);
-    if (!changed) stuck++; else stuck = 0;
+    await Promise.all(jobs);
+    fixed += jobs.length;
+    toast("Fixing… " + fixed);
+    if (!jobs.length) stuck++; else stuck = 0;
   }
   toast("Done — fixed " + fixed + " links");
 }
@@ -526,7 +539,6 @@ function openSettings() {
     '<div class="setrow"><button class="subchip active" id="aiSave">Save</button></div>';
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
   $("aiSave").onclick = () => {
-    $("fixLinks").onclick = () => { sheetHide(); migrateLinks(); };
     localStorage.setItem("nvidiaKey", $("keyIn").value.trim());
     AI_MODEL = $("modelIn").value.trim() || AI_MODEL;
     localStorage.setItem("aiModel", AI_MODEL);
@@ -534,6 +546,7 @@ function openSettings() {
     SUPA_KEY = $("supaKeyIn").value.trim(); localStorage.setItem("supaKey", SUPA_KEY);
     sheetHide(); toast("Settings saved");
   };
+  $("fixLinks").onclick = () => { sheetHide(); migrateLinks(); };
 }
 function sheetHide() { sheetEl.style.display = "none"; scrimEl.style.display = "none"; }
 scrimEl.onclick = sheetHide;
