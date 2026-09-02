@@ -170,44 +170,47 @@ async function mapPool(list, fn, size) {
 /* ---------- one-time migration of the 9,454 old rows ---------- */
 async function migrateLinks() {
   if (!supaReady()) { toast("Add Supabase credentials first"); return; }
-  let fixed = 0, stuck = 0, first = true;
+  const H = { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY };
+  const HJ = Object.assign({ "Content-Type": "application/json", Prefer: "return=minimal" }, H);
+  const likeQ = "link=like." + encodeURIComponent("%news.google.com/rss/articles/%");
+  let fixed = 0, stuck = 0, firstErr = "";
   toast("Fixing links… 0");
-  const q = "news?link=like." + encodeURIComponent("%news.google.com/rss/articles/%") + "&select=id,link&limit=50&order=id";
   while (stuck < 3) {
     let rows = [];
     try {
-      const r = await fetch(supaBase() + q, { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
-      if (!r.ok) { toast("Supabase query HTTP " + r.status); return; }
+      const r = await fetch(supaBase() + "news?" + likeQ + "&select=id,link&limit=50&order=id", { headers: H });
+      if (!r.ok) { toast("Query HTTP " + r.status); return; }
       rows = await r.json();
-    } catch (e) { toast("Supabase error: " + e.message); return; }
+    } catch (e) { toast("Query error " + e.message); return; }
     if (!rows.length) break;
 
     const resolved = await mapPool(rows.map(x => x.link), resolveRealUrl, 6);
+    if (!resolved[0] || resolved[0] === rows[0].link) { toast("Resolver found no redirect"); return; }
 
-    if (first) { // resolver self-test on the very first row
-      first = false;
-      if (!resolved[0] || resolved[0] === rows[0].link) {
-        toast("Resolver test failed — no redirect found");
-        return;
-      }
-    }
-
-    const jobs = [];
+    const tasks = [];
     for (let i = 0; i < rows.length; i++) {
-      if (resolved[i] && resolved[i] !== rows[i].link) {
-        jobs.push(fetch(supaBase() + "news?id=eq." + rows[i].id, {
-          method: "PATCH",
-          headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
-          body: JSON.stringify({ link: resolved[i] })
-        }).catch(() => {}));
-      }
+      const nu = resolved[i];
+      if (!nu || nu === rows[i].link) continue;
+      tasks.push(async () => {
+        const pr = await fetch(supaBase() + "news?id=eq." + rows[i].id,
+          { method: "PATCH", headers: HJ, body: JSON.stringify({ link: nu }) });
+        if (pr.ok) return true;
+        if (pr.status === 400 || pr.status === 409) {
+          // same article already exists with a real URL → drop the google-link duplicate
+          const dr = await fetch(supaBase() + "news?id=eq." + rows[i].id, { method: "DELETE", headers: H });
+          if (dr.ok) return true;
+          if (!firstErr) firstErr = "DELETE " + dr.status;
+        } else if (!firstErr) firstErr = "PATCH " + pr.status;
+        return false;
+      });
     }
-    await Promise.all(jobs);
-    fixed += jobs.length;
-    toast("Fixing… " + fixed);
-    if (!jobs.length) stuck++; else stuck = 0;
+    const results = await mapPool(tasks, t => t(), 8);
+    const ok = results.filter(Boolean).length;
+    fixed += ok;
+    toast("Fixing… " + fixed + (firstErr ? " · " + firstErr : ""));
+    if (!ok) stuck++; else stuck = 0;
   }
-  toast("Done — fixed " + fixed + " links");
+  toast("Done — fixed " + fixed + (firstErr ? " · first error: " + firstErr : " · no errors"));
 }
 
 /* ---------- calendar / archive view ---------- */
