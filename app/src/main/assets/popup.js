@@ -118,7 +118,7 @@ function parseItems(text) {
 }
 
 /* ---------- Supabase archive ---------- */
-function archiveItems(items, category) {
+async function archiveItems(items, category) {
   if (!supaReady() || !items.length) return;
   const rows = items.map(it => {
     const m = meta(it);
@@ -130,11 +130,71 @@ function archiveItems(items, category) {
       pub_date: isNaN(ts) ? null : ts.toISOString().slice(0, 10)
     };
   });
+  const links = await mapPool(rows.map(r => r.link), resolveRealUrl, 6);
+  links.forEach((l, i) => { if (l) rows[i].link = l; });
   fetch(supaBase() + "news?on_conflict=link", {
     method: "POST",
     headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(rows)
   }).catch(() => {});
+}
+
+/* ---------- resolve Google 302 → real publisher URL ---------- */
+function resolveRealUrl(url) {
+  return new Promise(res => {
+    if (!url || !url.includes("news.google.com/rss/articles/")) return res(url);
+    if (window.AndroidBridge) {
+      const cb = "__rdCb" + (++aiSeq);
+      window[cb] = out => { delete window[cb]; res(out || url); };
+      AndroidBridge.resolveRedirect(url, cb);
+    } else {
+      fetch(url, { redirect: "manual" })
+        .then(r => {
+          const loc = r.headers.get("location");
+          if (r.status >= 300 && r.status < 400 && loc) res(new URL(loc, url).href);
+          else res(r.url || url);
+        })
+        .catch(() => res(url));
+    }
+  });
+}
+async function mapPool(list, fn, size) {
+  const out = new Array(list.length); let i = 0;
+  const workers = [];
+  for (let w = 0; w < Math.min(size, list.length); w++)
+    workers.push((async () => { while (i < list.length) { const j = i++; out[j] = await fn(list[j]); } })());
+  await Promise.all(workers);
+  return out;
+}
+
+/* ---------- one-time migration of the 9,454 old rows ---------- */
+async function migrateLinks() {
+  if (!supaReady()) { toast("Add Supabase credentials first"); return; }
+  let fixed = 0, stuck = 0;
+  toast("Fixing links… 0");
+  while (stuck < 3) {
+    const r = await fetch(supaBase() + "news?link=like.%news.google.com/rss/articles/%&select=id,link&limit=50",
+      { headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY } });
+    if (!r.ok) break;
+    const rows = await r.json();
+    if (!rows.length) break;
+    const resolved = await mapPool(rows.map(x => x.link), resolveRealUrl, 6);
+    let changed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (resolved[i] && resolved[i] !== rows[i].link) {
+        changed++;
+        await fetch(supaBase() + "news?id=eq." + rows[i].id, {
+          method: "PATCH",
+          headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ link: resolved[i] })
+        }).catch(() => {});
+      }
+    }
+    fixed += changed;
+    toast("Fixing links… " + fixed);
+    if (!changed) stuck++; else stuck = 0;
+  }
+  toast("Done — fixed " + fixed + " links");
 }
 
 /* ---------- calendar / archive view ---------- */
@@ -462,9 +522,11 @@ function openSettings() {
     '<div class="setrow"><input id="modelIn" type="text" placeholder="Model ID" value="' + AI_MODEL + '"></div>' +
     '<div class="setrow"><input id="supaUrlIn" type="text" placeholder="Supabase URL (https://xxx.supabase.co)" value="' + SUPA_URL + '"></div>' +
     '<div class="setrow"><input id="supaKeyIn" type="password" placeholder="Supabase anon key" value="' + SUPA_KEY + '"></div>' +
+    '<div class="setrow"><button class="subchip" id="fixLinks">🔧 Fix archived Google links</button></div>' +
     '<div class="setrow"><button class="subchip active" id="aiSave">Save</button></div>';
   sheetEl.style.display = "block"; scrimEl.style.display = "block";
   $("aiSave").onclick = () => {
+    $("fixLinks").onclick = () => { sheetHide(); migrateLinks(); };
     localStorage.setItem("nvidiaKey", $("keyIn").value.trim());
     AI_MODEL = $("modelIn").value.trim() || AI_MODEL;
     localStorage.setItem("aiModel", AI_MODEL);
